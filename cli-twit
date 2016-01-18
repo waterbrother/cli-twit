@@ -5,6 +5,7 @@ require 'oauth'
 require 'json'
 require 'net/http'
 require 'rake'
+require 'io/console'
 
 class Twitter
         def initialize(accessfile)
@@ -89,7 +90,8 @@ class Twitter
         end
 
         def feed_pretty( feed_hash )
-                bar = "--------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------\n"
+                bar = "------------------------------------------------------------------\n"
+		pretty_output = ""
                 feed_hash.each { |tweet| # include tweet_id for replies
                         #make this a bit more readable
                         user = tweet[1][0]
@@ -115,42 +117,29 @@ class Twitter
                         date = tweet[1][7]
 
                         #count the username and create the tabspace until the text
-                        char_margin = 28
-                        user_char_diff = char_margin - user.length
-                        sn_char_diff = char_margin - screen_name.length - 1
-                        print bar
-                        print "    #{user}"
-                        user_char_diff.times { print " " }
-                        print "| " + text
-                        print "\n"
-                        print "    @#{screen_name}"
-                        sn_char_diff.times { print " " }
-                        print "|\n"
+                        pretty_output << "    #{user} @#{screen_name}\n"
+                        pretty_output << "    " + text
+                        pretty_output << "\n"
                         #dealing with PITA urls
                         if link_hash != nil
                                 link = link_hash["expanded_url"]
                                 if link.length > 50
                                         link = link_hash["url"]
-                                        32.times {print " "}
-                                        print "| link: #{link}\n"
+                                        pretty_output << "    link: #{link}\n"
                                 else
-                                        32.times {print " "}
-                                        print "| link: #{link}\n"
+                                        pretty_output << "    link: #{link}\n"
                                 end
                         elsif "#{text_array[1]}".length > 1
-                                32.times {print " "}
-                                print "| link: http#{text_array[1]}\n"
+                                pretty_output << "    link: http#{text_array[1]}\n"
                         end
-                        32.times {print " "}
-                        print "| retweets: #{num_retw}\n"
-                        32.times {print " "}
-                        print "| favorites: #{num_favs}\n"
-                        32.times {print " "}
-                        print "| date posted: #{date}\n"
-                        32.times {print " "}
-                        print "| tweet id: #{tweet_id}\n"
+			pretty_output << "    .........................\n"
+                        pretty_output << "    tweet id: #{tweet_id}\n"
+                        pretty_output << "    retweets: #{num_retw}\n"
+                        pretty_output << "    favorites: #{num_favs}\n"
+                        pretty_output << "    date posted: #{date}\n"
+                        pretty_output << bar
                 }
-                print bar
+		return pretty_output
         end
 
         def api_call(http_method, api_path, query_opts)
@@ -181,41 +170,50 @@ class Twitter
                 @response = @twitter.request(@request)
         end
 
-        def favorite
-                puts "Enter id of the tweet to favorite:"
-                print ": "
-                favorite_id = gets.chomp
-                api_call( :post, "/1.1/favorites/create.json", {"id" => favorite_id} )
+        def favorite(favorite_id)
+                output = ""
 
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been favorited: " + tweet["text"]
+                if favorite_id != nil
+                        api_call( :post, "/1.1/favorites/create.json", {"id" => favorite_id} )
+
+                        if @response.code == '200'
+                                tweet = JSON.parse(@response.body)
+                                output =  "Tweet has been favorited: #{tweet["text"]}\n"
+                        else
+                                output =  "Tweet failed to be favorited: #{@response.body}"
+                        end
                 else
-                        puts "Tweet failed to be favorited: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
+                        output = "Please pass tweet id as an argument to this function.\n"
                 end
+
+                return output
         end
 
-        def unfavorite
-                puts "Enter id of the tweet to unfavorite:"
-                print ": "
-                favorite_id = gets.chomp
-                api_call( :post, "/1.1/favorites/destroy.json", {"id" => favorite_id} )
+        def unfavorite(favorite_id)
+                output = ""
 
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been unfavorited: " + tweet["text"]
+                if favorite_id != nil
+                        api_call( :post, "/1.1/favorites/destroy.json", {"id" => favorite_id} )
+
+                        if @response.code == '200'
+                                tweet = JSON.parse(@response.body)
+                                output = "Tweet has been unfavorited: #{tweet["text"]}\n"
+                        else
+                                output = "Tweet failed to be unfavorited: #{@response.body}\n"
+                        end
                 else
-                        puts "Tweet failed to be unfavorited: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
+                        output = "Please pass tweet id as an argument to this function.\n"
                 end
+
+                return output
         end
 
  
-        def get_home_timeline
-                api_call( :get, "/1.1/statuses/home_timeline.json", {"count" => 10} )
+        def get_home_timeline(rows)
+		#minus 11 for the head
+		#divided by 10 lines per tweet
+		max_tweets = ( (rows - 11).to_f/10 ).floor
+                api_call( :get, "/1.1/statuses/home_timeline.json", {"count" => max_tweets} )
 
                 feed = nil
                 if @response.code == '200' then
@@ -239,303 +237,143 @@ class Twitter
                         #puts output
 
                         #make our output prettier
-                        feed_pretty(output)
+                        return feed_pretty(output)
                 else
-                        puts "Could not get the feed!" +
-                        "Code:#{@response.code} Body:#{@response.body}"
+                        return "Could not get the feed! Code:#{@response.code} Body:#{@response.body}"
                 end
         end
 
         def post_tweet(text)
-                api_call( :post, "/1.1/statuses/update.json", {"status" => text} )
+                output = ""
 
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been posted: " + tweet["text"]
+                if text != nil and text.length > 140
+                        output = "Tweet text is more than 140 characters. Post aborted.\n"
+                elsif text != nil and text.length <= 140
+                        api_call( :post, "/1.1/statuses/update.json", {"status" => text} )
+
+                        if @response.code == '200'
+                                tweet = JSON.parse(@response.body)
+                                output = "Tweet has been posted: #{tweet["text"]}\n"
+                        else
+                                output = "Tweet failed to post: #{@response.body}\n"
+                        end
                 else
-                        puts "Tweet failed to post: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
+                        output = "No tweet text given. Post aborted.\n"
                 end
+
+                return output
         end
 
-        def post_reply(text, username, tweet_id)
-                final_text = "#{username} #{text}"
-                api_call( :post, "/1.1/statuses/update.json", {"status" => final_text, "in_reply_to_status_id" => tweet_id} )
+        def post_reply(username, tweet_id, text)
+                output = ""
 
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been posted: " + tweet["text"]
-                else
-                        puts "Tweet failed to post: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
-                end
-        end
+                all_good = true if username != nil and tweet_id != nil and text != nil and username =~ /@/
 
-        def write_reply
-                puts "Enter username to reply to (including '@' symbol):"
-                print ": "
-                username = gets.chomp
-                puts "Enter tweet ID to reply to:"
-                print ": "
-                tweet_id = gets.chomp
-                num_user_chars = username.length
-                max_tweet_length = 140 - num_user_chars
-                puts "Enter text to post ( must be less than 140 characters ):"
-                print ": "
-                post_text = gets.chomp
-                text = ""
-
-                if post_text.length > max_tweet_length
-                        puts "Tweet text more than 140 characters. truncate or abort? (t/a)"
-                        print ": "
-                        response = gets.chomp.downcase
-                        answered = false
-                        until answered == true
-                                if response == 't'
-                                        #truncate post_text to 140 char
-                                        text = post_text[0..(max_tweet_length -1)]
-                                        post_reply(text, username, tweet_id)
-                                        answered = true
-                                elsif response == 'a'
-                                        #abort post
-                                        puts "Tweet aborted."
-                                        answered = true
+                if all_good == true
+                        tweet_length = username.length + text.length
+                        
+                        if tweet_length > 140
+                                output = "Tweet length more than 140 characters. Reply aborted.\n"
+                        else
+                                final_text = "#{username} #{text}"
+                                api_call( :post, "/1.1/statuses/update.json", {"status" => final_text, "in_reply_to_status_id" => tweet_id} )
+                                
+                                if @response.code == '200'
+                                        tweet = JSON.parse(@response.body)
+                                        output =  "Tweet has been posted: #{tweet["text"]}\n"
                                 else
-                                        puts "Not a valid command."
-                                        puts "Truncate or abort? (t/a)"
-                                        print ": "
-                                        response = gets.chomp.downcase
+                                        output << "Tweet failed to post: #{@response.body}\n"
                                 end
                         end
                 else
-                        text = post_text
-                        post_reply(text, username, tweet_id)
+                        output = "Please check your parameters. See help function for more info.\n"
                 end
+
+                return output
         end
 
+        def retweet(tweet_id)
+                output = ""
 
-        def upload_media(path_to_media)
-                #query = URI.www_ecode_form( "media" => path_to_media )
-                path = "https://upload.twitter.com/1.1/media/upload.json"
-                #@address = URI("#{path}?#{query}")
-                @address = URI("#{path}")
+                if tweet_id != nil
+                        api_call( :post, "/1.1/statuses/retweet/#{tweet_id}.json", {} )
 
-                @twitter = Net::HTTP.new(@address.host, @address.port)
-                @twitter.use_ssl = true
-                @twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
-
-                get_all_credentials()
-
-                @request = Net::HTTP::Post.new(@address.request_uri)
-                basename = File.basename(path_to_media)
-
-                boundary = "00cli-twit" + rand(100000000000000000).to_s + "tiwt-ilc99"
-                multipart_body = []
-                filefield = 'media[]'
-
-                multipart_body << "--#{boundary}\r\n"
-                #multipart_body << "Content-Disposition: form-data; name=\"#{extension}\"; filename=\"#{basename}\"\r\n"
-                multipart_body << "Content-type: application/octet-stream\r\n"
-                multipart_body << "\r\n"
-                multipart_body << File.read(path_to_media)
-                multipart_body << "\r\n--#{boundary}--\r\n"
-
-                @request.body = multipart_body.join
-
-                @request.oauth!(@twitter, @api, @access)
-                @response = @twitter.request(@request)
-
-                if @response.code == '200'
-                        puts "Media uploaded sucessfully."
-                        upload = JSON.parse(@response.body)
-                        @media_id = upload["media_id"]
-                else
-                        puts "Media upload failed" + "Code: #{@response.code} Body: #{@response.body}"
-                end
-        end
-
-        def post_media_tweet(text, media_id)
-                api_call( :post, "/1.1/statuses/update.json", {"status" => text, "media_ids" => media_id} )
-
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been posted: " + tweet["text"]
-                else
-                        puts "Tweet failed to post: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
-                end
-        end
-        
-        def write_media_post
-                puts "Enter path to media file (JPEG, PNG, and GIF only):"
-                print ": "
-                path_to_media = gets.chomp
-
-                upload_media(path_to_media)
-
-                if @response == '200'
-                        puts "Would you like to say something about this upload? (if not, leave blank)"
-                        post_text = gets.chomp
-                        text = ""
-
-                        if post_text.length > 140
-                                puts "Tweet text more than 140 characters. truncate or abort? (t/a)"
-                                print ": "
-                                response = gets.chomp.downcase
-                                answered = false
-
-                                until answered == true
-                                        if response == 't'
-                                                text = post_text[0..139]
-                                                #post the tweet
-                                                post_media_tweet(text, @media_id)
-                                                answered = true
-                                        elsif response == 'a'
-                                                puts "Tweet aborted."
-                                                answered == true
-                                        else
-                                                puts "Not a valid command."
-                                                puts "Truncate or abort?"
-                                                print ": "
-                                                response == gets.chomp.downcase
-                                        end
-                                end
+                        if @response.code == '200'
+                                tweet = JSON.parse(@response.body)
+                                output = "Tweet has been posted: #{tweet["text"]}\n"
                         else
-                                text = post_text
-                                # post the tweet
-                                post_media_tweet(text, @media_id)
-                        end                                
-                else
-                        puts "Could not post."
-                end
-        end
-
-        def retweet
-                puts "Enter id of tweet to retweet:"
-                print ": "
-                tweet_id = gets.chomp
-                puts "retweeting tweet: #{tweet_id}"
-                api_call( :post, "/1.1/statuses/retweet/#{tweet_id}.json", {} )
-
-                if @response.code == '200'
-                        tweet = JSON.parse(@response.body)
-                        puts "Tweet has been posted: " + tweet["text"]
-                else
-                        puts "Tweet failed to post: "
-                        puts "Code: " + @response.code
-                        puts "Body: " + @response.body
-                end
-        end
-
-        def delete_post
-                puts "Enter id # of tweet to delete (must be your own):"
-                print ": " 
-                tweet_id = gets.chomp
-
-                puts "are you sure you want to delete tweet ##{tweet_id} (y/n)?"
-                answer = gets.chomp.downcase
-                answered = false
-                until answered == true
-                        if answer == 'y'
-                                answered = true
-                        elsif answer == 'n'
-                                answered = true
-                        else
-                                puts "Not a valid command."
-                                puts "are you sure you want to delete tweet ##{tweet_id} (y/n)?"
-                                answer = gets.chomp.downcase
+                                output << "Tweet failed to post: #{@response.body}\n"
                         end
+                else
+                        output = "Tweet id empty. Retweeting aborted.\n"
                 end
 
-                if answer == 'y'
+                return output
+        end
+
+        def delete_post(tweet_id)
+                output = ""
+
+                if tweet_id != nil
                         api_call( :post, "/1.1/statuses/destroy.json", {"id" => tweet_id} )
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                puts "Tweet ##{tweet["id_str"]} has been deleted: " + tweet["text"] 
+                                output = "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}\n"
                         else
-                                puts "Tweet failed to delete: "
-                                puts "Code: " + @response.code
-                                puts "Body: " + @response.body
-                        end
-                elsif answer == 'n'
-                        puts "Deletion aborted."
-                end
-        end
-
-        def write_post
-                puts "Enter text to post ( must be less than 140 characters ):"
-                print ": "
-                post_text = gets.chomp
-                text = ""
-
-                if post_text.length > 140
-                        puts "Tweet text more than 140 characters. truncate or abort? (t/a)"
-                        print ": "
-                        response = gets.chomp.downcase
-                        answered = false
-                        until answered == true
-                                if response == 't'
-                                        #truncate post_text to 140 char
-                                        text = post_text[0..139]
-                                        post_tweet(text)
-                                        answered = true
-                                elsif response == 'a'
-                                        #abort post
-                                        puts "Tweet aborted."
-                                        answered = true
-                                else
-                                        puts "Not a valid command."
-                                        puts "Truncate or abort? (t/a)"
-                                        print ": "
-                                        response = gets.chomp.downcase
-                                end
+                                output = "Tweet failed to delete: #{@response.body}\n"
                         end
                 else
-                        text = post_text
-                        post_tweet(text)
+                        output = "No tweet ID given; deletion aborted.\n"
                 end
+
+                return output
         end
 
-        def follow_user
-                puts "Enter the username to follow:"
-                username = gets.chomp
-                api_call( :post, "/1.1/friendships/create.json", { "screen_name" => username, "follow" => true })
-                if @response.code == '200' then
-                        confirm = JSON.parse(@response.body)
-                        user_followed = confirm["screen_name"]
-                        real_name = confirm["name"]
-                        puts "Now following user #{user_followed}:"
-                        puts "#{real_name}"
+        def follow_user(username)
+                output = ""
+
+                if username != nil
+                        api_call( :post, "/1.1/friendships/create.json", { "screen_name" => username, "follow" => true } )
+                        if @response.code == '200'
+                                confirm = JSON.parse(@response.body)
+                                user_followed = confirm["screen_name"]
+                                real_name = confirm["name"]
+                                output = "Now following user #{user_followed}: #{real_name}\n"
+                        else
+                                output = "Failed to follow user: #{@response.body}\n"
+                        end
                 else
-                        puts "Failed to follow user."
-                        puts "Code: #{@response.code} Body: #{@response.body}"
+                        output = "Follow failed; username cannot be empty.\n"
                 end
+
+                return output
+        end
+
+        def unfollow_user(username)
+                output = ""
+
+                if username != nil
+                        api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username })
+                        if @response.code == '200' then
+                                confirm = JSON.parse(@response.body)
+                                user_unfollowed = confirm["screen_name"]
+                                real_name = confirm["name"]
+                                output =  "Unfollowed user #{user_unfollowed}: #{real_name}"
+                        else
+                                output = "Failed to follow user: #{@response.body}"
+                        end
+                else
+                        output = "Unfollow failed; username cannot be empty.\n"
+                end
+
+                return output
          end
 
-        def unfollow_user
-                puts "Enter the username to unfollow:"
-                username = gets.chomp
-                api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username })
-                if @response.code == '200' then
-                        confirm = JSON.parse(@response.body)
-                        user_unfollowed = confirm["screen_name"]
-                        real_name = confirm["name"]
-                        puts "Unfollowed user #{user_unfollowed}:"
-                        puts "#{real_name}"
-                else
-                        puts "Failed to follow user."
-                        puts "Code: #{@response.code} Body: #{@response.body}"
-                end
-         end
-
-         def get_user_feed
-                puts "Enter the username to view:"
-                username = gets.chomp
-
-                api_call( :get, "/1.1/statuses/user_timeline.json", {"screen_name" => username, "count" => 10 })
+         def get_user_feed(username, rows)
+		#minus 11 for the head
+		#divided by 10 lines per tweet
+		max_tweets = ( (rows - 11).to_f/10 ).floor
+                api_call( :get, "/1.1/statuses/user_timeline.json", {"screen_name" => username, "count" => max_tweets })
 
                 if @response.code == '200' then
                         feed =JSON.parse(@response.body)
@@ -555,106 +393,159 @@ class Twitter
                         }
 
                         #make our output prettier
-                        feed_pretty(output)
+                        return feed_pretty(output)
                else
-                        puts "Could not get the feed!" +
+                        return "Could not get the feed!" +
                         "Code:#{@response.code} Body:#{@response.body}"
                end
         end
 
-        def welcome_mesg
-                #puts "Welcome to CLI-twit, the Command Line Interface for Twitter."
-                welcome = "
-                      ________   ____      ___      __________ 
-                     /       /  /   /     /   /    /         /           __
-                    /   ____/  /   /     /   /    /___   ___/           /_/   __
-                   /   /      /   /     /   / ____   /  /   __     __  _   __/ /_
-                  /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/
-                 /   /____  /   /___  /   /        /  /   / / // / / / /   / /
-                /        / /       / /   /        /  /   / /_//_/ / / /   / /
-               /________/ /_______/ /___/        /__/   /________/ /_/   /_/
-                
-                "
-                puts welcome
-                puts "Please enter a command:"
+        def header
+                header = "
+       ________   ____      ___      __________ 
+      /       /  /   /     /   /    /         /           __
+     /   ____/  /   /     /   /    /___   ___/           /_/   __
+    /   /      /   /     /   / ____   /  /   __     __  _   __/ /_
+   /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/
+  /   /____  /   /___  /   /        /  /   / / // / / / /   / /
+ /        / /       / /   /        /  /   / /_//_/ / / /   / /
+/________/ /_______/ /___/        /__/   /________/ /_/   /_/
+ 
+------------------------------------------------------------------
+"
+                puts header
         end
 
         def help
-                puts "Command List:"
-                puts "  'home' or 'h':"
-                puts "      View your home feed"
-                puts "  'post' or 'p':"
-                puts "      Write a post"
-                puts "  'media' or 'mp':"
-                puts "      Write a post with media attached"
-                puts "  'reply' or 'rp':"
-                puts "      Reply to a tweet (requires tweet id)"
-                puts "  'retweet' or 'rt':"
-                puts "      Retweet a tweet (requires tweet id)"
-                puts "  'user' or 'u':"
-                puts "      View another user's feed (requires username)"
-                puts "  'fav' or 'f':"
-                puts "      Mark a post as favorite (requires tweet id)"
-                puts "  'unfav' or 'uf':"
-                puts "      Unmark a post as favorite (requires tweet id)"
-                puts "  'follow' or 'fo':"
-                puts "      Follow a user's tweets (requires username)"
-                puts "  'unfolow' or 'ufo':"
-                puts "      Unfollow a user's tweets (requires username)"
-                puts "  'delete' or 'd':"
-                puts "      Delete one of your posts (must be your own)"
-                puts "  'help' or '?':"
-                puts "      View this menu"
-                puts "  'quit' or 'q':"
-                puts "      Exit the program"
+                help = ""
+                help << "Command syntax:\n"
+                help << "  <command>: <parameter1>,<parameter2>,<etc...>\n"
+                help << "\n"
+                help << "Command List:\n"
+                help << "  'home' or 'h':\n"
+                help << "      View your home feed\n"
+                help << "      home\n"
+                help << "  'post' or 'p':\n"
+                help << "      Write a post\n"
+                help << "      post: <tweet_text>\n"
+                help << "  'reply' or 'rp':\n"
+                help << "      Reply to a tweet\n"
+                help << "      reply: <username>,<tweet_id>,<reply_text>\n"
+                help << "  'retweet' or 'rt':\n"
+                help << "      Retweet a tweet\n"
+                help << "      retweet: <tweet_id>\n"
+                help << "  'user' or 'u':\n"
+                help << "      View another user's feed\n"
+                help << "      user: <username>\n"
+                help << "  'fav' or 'f':\n"
+                help << "      Mark a post as favorite\n"
+                help << "      fav: <tweet_id>\n"
+                help << "  'unfav' or 'uf':\n"
+                help << "      Unmark a post as favorite\n"
+                help << "      unfav: <tweet_id>\n"
+                help << "  'follow' or 'fo':\n"
+                help << "      Follow a user's tweets\n"
+                help << "      follow: <username>\n"
+                help << "  'unfolow' or 'ufo':\n"
+                help << "      Unfollow a user's tweets\n"
+                help << "      unfollow: <username>\n"
+                help << "  'delete' or 'd':\n"
+                help << "      Delete one of your posts (must be your own)\n"
+                help << "      delete: <tweet_id>\n"
+                help << "  'help' or '?':\n"
+                help << "      View this menu\n"
+                help << "      help\n"
+                help << "  'quit' or 'q':\n"
+                help << "      Exit the program\n"
+                help << "      quit\n"
+                return help
         end
 
+	def center_pos(rows,columns)
+		row_center = (rows.to_f/2).floor
+		col_center = (columns.to_f/2).floor
+		return row_center, col_center
+	end
+
+	def output(input)
+		puts `clear`
+		header()
+		print input
+	end
+
+	def get_command(r, c)
+                input = ""
+                output("Please enter a command:\n")
+                while true
+                        print "# "
+                        input = gets.chomp.downcase
+                        if input == "home" || input == 'h'
+                                timeline = get_home_timeline(r)
+				output( timeline )
+                        elsif input =~ /^post:/ || input =~ /^p:/
+                                post = input.split(": ")[1]
+                                output( post_tweet(post) )
+                        elsif input =~ /^reply:/ || input =~ /^rp:/
+                                reply = input.split(": ")[1]
+                                name = reply.split(",")[0]
+                                id = reply.split(",")[1]
+                                text = reply.split(",")[2..-1].join(",")
+                                reply_output = post_reply(name, id, text)
+                                output ( reply_output )
+                        elsif input =~ /^retweet:/ || input =~ /^rt:/
+                                id = input.split(": ")[1]
+                                output( retweet(id) )
+                        elsif input =~ /^user:/ || input =~ /^u:/
+                                user = input.split(": ")[1]
+                                user_feed = get_user_feed(user, r)
+                                output ( user_feed )
+                        elsif input =~ /^fav:/ || input =~ /^f:/
+                                id = input.split(": ")[1]
+                                output( favorite(id) )
+                        elsif input =~ /^unfav:/ || input =~ /^uf:/
+                                id = input.split(": ")[1]
+                                output( unfavorite(id) )
+                        elsif input =~ /^follow:/ || input =~ /^fo:/
+                                user = input.split(": ")[1]
+                                output( follow_user(user) )
+                        elsif input =~ /^unfollow:/ || input =~ /^ufo:/
+                                user = input.split(": ")[1]
+                                output( unfollow_user(user) )
+                        elsif input =~ /^delete:/ || input =~ /^d:/
+                                post = input.split(": ")[1]
+                                output( delete_post(post) )
+                        elsif input == "help" || input == '?'
+                                output( help() )
+                        elsif input == "quit" || input == 'q'
+				exit
+                        else
+                                if input == ""
+                                        output("Please enter a command:\n")
+                                else
+                                        output( "Unrecognized command.\n" )
+                                end
+                        end
+                        sleep(0.1)
+               end
+	end
 
         def begin
                 if datafile_exists() == false
                         create_new_datafile() # both consumer info and access token are gathered in this step
                 end
 
-
-                welcome_mesg()
-
-                #main loop
-                input = ""
-                quit = false
-                until quit == true
-                        print ": "
-                        input = gets.chomp.downcase
-                        if input == "home" || input == 'h'
-                                get_home_timeline()
-                        elsif input == "post" || input == 'p'
-                                write_post()
-                        elsif input == "media" || input == 'mp'
-                                write_media_post()
-                        elsif input == "reply" || input == 'rp'
-                                write_reply()
-                        elsif input == "retweet" || input == 'rt'
-                                retweet()
-                        elsif input == "user" || input == 'u'
-                                get_user_feed()
-                        elsif input == "fav" || input == 'f'
-                                favorite()
-                        elsif input == "unfav" || input == 'uf'
-                                unfavorite()
-                        elsif input == "follow" || input == 'fo'
-                                follow_user()
-                        elsif input == "unfollow" || input == 'ufo'
-                                unfollow_user()
-                        elsif input == "delete" || input == 'd'
-                                delete_post()
-                        elsif input == "help" || input == '?'
-                                help()
-                        elsif input == "quit" || input == 'q'
-                                quit = true
-                        else
-                                puts "Unrecognized command."
-                        end
-                        sleep(0.1)
-                end
+		rows, columns = $stdin.winsize
+		if rows > 22 and columns > 66
+			get_command(rows, columns)
+		else
+			puts `clear`
+			puts "The terminal size is too small."
+			puts "The terminal must be"
+			pust "at least 22 characters tall"
+			puts "and 66 characters wide."
+			puts "Please resize and run again."
+			exit
+		end
         end
 end
 
