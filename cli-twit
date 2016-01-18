@@ -499,7 +499,39 @@ class Twitter
                 end
         end
 
-        def get_user_feed
+        def follow_user
+                puts "Enter the username to follow:"
+                username = gets.chomp
+                api_call( :post, "/1.1/friendships/create.json", { "screen_name" => username, "follow" => true })
+                if @response.code == '200' then
+                        confirm = JSON.parse(@response.body)
+                        user_followed = confirm["screen_name"]
+                        real_name = confirm["name"]
+                        puts "Now following user #{user_followed}:"
+                        puts "#{real_name}"
+                else
+                        puts "Failed to follow user."
+                        puts "Code: #{@response.code} Body: #{@response.body}"
+                end
+         end
+
+        def unfollow_user
+                puts "Enter the username to unfollow:"
+                username = gets.chomp
+                api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username })
+                if @response.code == '200' then
+                        confirm = JSON.parse(@response.body)
+                        user_unfollowed = confirm["screen_name"]
+                        real_name = confirm["name"]
+                        puts "Unfollowed user #{user_unfollowed}:"
+                        puts "#{real_name}"
+                else
+                        puts "Failed to follow user."
+                        puts "Code: #{@response.code} Body: #{@response.body}"
+                end
+         end
+
+         def get_user_feed
                 puts "Enter the username to view:"
                 username = gets.chomp
 
@@ -565,6 +597,10 @@ class Twitter
                 puts "      Mark a post as favorite (requires tweet id)"
                 puts "  'unfav' or 'uf':"
                 puts "      Unmark a post as favorite (requires tweet id)"
+                puts "  'follow' or 'fo':"
+                puts "      Follow a user's tweets (requires username)"
+                puts "  'unfolow' or 'ufo':"
+                puts "      Unfollow a user's tweets (requires username)"
                 puts "  'delete' or 'd':"
                 puts "      Delete one of your posts (must be your own)"
                 puts "  'help' or '?':"
@@ -604,6 +640,10 @@ class Twitter
                                 favorite()
                         elsif input == "unfav" || input == 'uf'
                                 unfavorite()
+                        elsif input == "follow" || input == 'fo'
+                                follow_user()
+                        elsif input == "unfollow" || input == 'ufo'
+                                unfollow_user()
                         elsif input == "delete" || input == 'd'
                                 delete_post()
                         elsif input == "help" || input == '?'
