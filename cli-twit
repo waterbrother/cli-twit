@@ -1,0 +1,427 @@
+#!/usr/bin/ruby
+
+require 'rubygems'
+require 'oauth'
+require 'json'
+require 'net/http'
+
+class Twitter
+        def initialize(accessfile)
+                @accessfile = accessfile
+        end
+
+        def datafile_exists
+                return File.exists?(@accessfile)
+        end
+
+        def get_consumer
+                data = Net::HTTP.get( 'julianrutledge.com', '/cli-twit' )
+                data_hash = data.split(":")
+                @consumer_key = data_hash[0].chomp
+                #puts "ck: " + @consumer_key
+                @consumer_secret = data_hash[1].chomp
+                #puts "ck: " + @consumer_secret
+        end
+
+
+        def authorize
+                @consumer = OAuth::Consumer.new(
+                        @consumer_key,
+                        @consumer_secret,
+                        {
+                                :site => "https://api.twitter.com",
+                                :scheme => :header,
+                                :http_method =>:post,
+                                :request_token_path => "/oauth/request_token",
+                                :access_token_path => "/oauth/access_token",
+                                :authorize_path => "/oauth/authorize"
+                        }
+                )
+                @request_token = @consumer.get_request_token
+
+                puts "Please visit the following URL: "
+                puts @request_token.authorize_url
+                puts "to authorize cli-twit to post on your behalf."
+                puts "Enter the authorization PIN to continue, or 'q' to quit:"
+                input = gets.chomp
+                got_input = false
+                if input.downcase == 'q'
+                        puts "Exiting without authorizing cli-twit."
+                else
+                        @access_token = @request_token.get_access_token(
+                                :oauth_verifier => input
+                        )
+                end
+        end
+
+        def create_new_datafile
+                puts "Welcome to CLI Twit!"
+                puts "It seems to be your first time using the software. Let's get set up."
+                
+                get_consumer()
+                authorize()
+
+                File.open("access", "w") { 
+                        |line| line.write(@access_token.token + ":" + @access_token.secret) 
+                }
+        end
+
+        def read_datafile
+                access = File.open(@accessfile, "r") 
+                access_hash = Hash.new
+                access.each { |line| access_hash = line.split(":") }
+                access.close
+                @token = access_hash[0].chomp
+                @secret = access_hash[1].chomp
+        end
+
+        def cat_data
+                puts @token
+                puts @secret
+        end
+
+        def get_all_credentials
+                get_consumer()  # get the consumer credentials from home
+                @api = OAuth::Consumer.new(@consumer_key, @consumer_secret)
+                read_datafile() # read the access token from local file
+                @access = OAuth::Token.new(@token, @secret)
+        end
+
+        def feed_pretty( feed_hash )
+                bar = "--------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------\n"
+                feed_hash.each { |tweet| # include tweet_id for replies
+                        #make this a bit more readable
+                        user = tweet[1][0]
+                        #remove trailing hyperlink
+                        text_array = tweet[1][1].split("http")
+                        #remove carriage returns
+                        text_no_carriage = text_array[0].sub("\n"," ")
+                        #remove ampersands
+                        text_no_amp = text_no_carriage.sub(" &amp; "," & ")
+                        #final product
+                        text = text_no_amp
+                        tweet_id = tweet[1][2]
+                        link_hash = tweet[1][3]
+                        screen_name = tweet[1][4]
+
+                        #count the username and create the tabspace until the text
+                        char_margin = 28
+                        user_char_diff = char_margin - user.length
+                        sn_char_diff = char_margin - screen_name.length - 1
+                        print bar
+                        print "    #{user}"
+                        user_char_diff.times { print " " }
+                        print "| " + text
+                        print "\n"
+                        print "    @#{screen_name}"
+                        sn_char_diff.times { print " " }
+                        print "|\n"
+                        if link_hash != nil
+                                link = link_hash["expanded_url"]
+                                if link.length > 50
+                                        link = link_hash["url"]
+                                        32.times {print " "}
+                                        print "| link: #{link}\n"
+                                else
+                                        32.times {print " "}
+                                        print "| link: #{link}\n"
+                                end
+                        elsif "#{text_array[1]}".length > 1
+                                32.times {print " "}
+                                print "| link: http#{text_array[1]}\n"
+                        end
+                        32.times {print " "}
+                        print "| tweet id: #{tweet_id}\n"
+                }
+                print bar
+         end
+
+        def api_call(http_method, api_path, query_opts)
+                #using a query here is a more uniform method than request.set_form_data for POST
+                if query_opts != nil
+                        query = URI.encode_www_form(query_opts)
+                        @query = "?#{query}"
+                else
+                        @query = ""
+                end
+
+                @base_url = "https://api.twitter.com"
+                @path = api_path
+                @address = URI("#{@base_url}#{@path}#{@query}")
+
+                @twitter = Net::HTTP.new(@address.host, @address.port)
+                @twitter.use_ssl = true
+                @twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+                get_all_credentials()
+
+                if http_method == "get"
+                        @request = Net::HTTP::Get.new(@address.request_uri)
+                elsif http_method == "post"
+                        @request = Net::HTTP::Post.new(@address.request_uri)
+                end
+                @request.oauth!(@twitter, @api, @access)
+                @response = @twitter.request(@request)
+        end
+
+        def get_emoh_timeline
+                api_call( "get", "/1.1/statuses/home_timeline.json", {"count" => 10} )
+
+                 feed = nil
+                if @response.code == '200' then
+                        feed =JSON.parse(@response.body)
+                        output = Hash.new
+                        count = 0
+                        feed.each { |tweet|
+                                user = tweet["user"]["name"]
+                                screen_name = tweet["user"]["screen_name"]
+                                text = tweet["text"]
+                                tweet_id = tweet["id"]
+                                links = tweet["entities"]["urls"][0]
+                                output[count] = [ user, text, tweet_id, links, screen_name ]
+                                count += 1
+                        }
+
+                        #puts output
+
+                        #make our output prettier
+                        feed_pretty(output)
+               else
+                        puts "Could not get the feed!" +
+                        "Code:#{@response.code} Body:#{@response.body}"
+               end
+        end
+
+        def get_home_timeline
+                query = URI.encode_www_form("count" => 10)
+                address = URI("https://api.twitter.com/1.1/statuses/home_timeline.json?#{query}")
+                twitter = Net::HTTP.new(address.host, address.port)
+                twitter.use_ssl = true
+                twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+                get_all_credentials()
+
+                request = Net::HTTP::Get.new(address.request_uri)
+                request.oauth!(twitter, @api, @access)
+
+                twitter.start
+                response = twitter.request(request)
+
+                feed = nil
+                if response.code == '200' then
+                        feed =JSON.parse(response.body)
+                        output = Hash.new
+                        count = 0
+                        feed.each { |tweet|
+                                user = tweet["user"]["name"]
+                                screen_name = tweet["user"]["screen_name"]
+                                text = tweet["text"]
+                                tweet_id = tweet["id"]
+                                links = tweet["entities"]["urls"][0]
+                                output[count] = [ user, text, tweet_id, links, screen_name ]
+                                count += 1
+                        }
+
+                        #puts output
+
+                        #make our output prettier
+                        feed_pretty(output)
+               else
+                        puts "Could not get the feed!" +
+                        "Code:#{response.code} Body:#{response.body}"
+               end
+        end
+
+        def post_tweet(text)
+                #using a query here is a more uniform method than request.set_form_data
+                query = URI.encode_www_form("status" => text)
+                address = URI("https://api.twitter.com/1.1/statuses/update.json?#{query}")
+                twitter = Net::HTTP.new(address.host, address.port)
+                twitter.use_ssl = true
+                twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+                get_all_credentials()
+
+                request = Net::HTTP::Post.new(address.request_uri)
+                #request.set_form_data( "status" => text )
+                request.oauth!(twitter, @api, @access)
+
+                twitter.start
+
+                response = twitter.request(request)
+
+                if response.code == '200'
+                        tweet = JSON.parse(response.body)
+                        puts "Tweet has been posted: " + tweet["text"]
+                else
+                        puts "Tweet failed to post: "
+                        puts "Code: " + response.code
+                        puts "Body: " + response.body
+                end
+        end
+
+        def post_reply(text, tweet_id)
+                query = URI.encode_www_form("in_reply_to_status_id" => tweet_id)
+                address = URI("https://api.twitter.com/1.1/statuses/update.json?#{query}")
+                twitter = Net::HTTP.new(address.host, address.port)
+                twitter.use_ssl = true
+                twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+                get_all_credentials()
+
+                request = Net::HTTP::Post.new(address.request_uri)
+                request.set_form_data( "status" => text )
+                request.oauth!(twitter, @api, @access)
+
+                twitter.start
+
+                response = twitter.request(request)
+
+                if response.code == '200'
+                        tweet = JSON.parse(response.body)
+                        puts "Tweet has been posted: " + tweet["text"]
+                else
+                        puts "Tweet failed to post: "
+                        puts "Code: " + response.code
+                        puts "Body: " + response.body
+                end
+        end
+
+        def post_media
+        end
+
+        def write_post
+                puts "Enter text to post ( must be less than 140 characters ):"
+                print ": "
+                post_text = gets.chomp
+                text = ""
+
+                if post_text.length > 140
+                        puts "Tweet text more than 140 characters. truncate or abort? (t/a)"
+                        print ": "
+                        response = gets.chomp.downcase
+                        answered = false
+                        until answered == true
+                                if response == 't'
+                                        #truncate post_text to 140 char
+                                        text = post_text[0..139]
+                                        post_tweet(text)
+                                        answered = true
+                                elsif response == 'a'
+                                        #abort post
+                                        puts "Tweet aborted."
+                                        answered = true
+                                else
+                                        puts "Not a valid command."
+                                        puts "Truncate or abort? (t/a)"
+                                        print ": "
+                                        response = gets.chomp.downcase
+                                end
+                        end
+                else
+                        text = post_text
+                        post_tweet(text)
+                end
+        end
+
+        def get_user_feed()
+                puts "Enter the username to view:"
+                username = gets.chomp
+
+                query = URI.encode_www_form("screen_name" => username, "count" => 10)
+                address = URI("https://api.twitter.com/1.1/statuses/user_timeline.json?#{query}")
+                twitter = Net::HTTP.new(address.host, address.port)
+                twitter.use_ssl = true
+                twitter.verify_mode = OpenSSL::SSL::VERIFY_PEER
+
+                get_all_credentials()
+
+                request = Net::HTTP::Get.new(address.request_uri)
+                request.oauth!(twitter, @api, @access)
+
+                twitter.start
+                response = twitter.request(request)
+
+                feed = nil
+                if response.code == '200' then
+                        feed =JSON.parse(response.body)
+                        output = Hash.new
+                        count = 0
+                        feed.each { |tweet|
+                                user = tweet["user"]["name"]
+                                screen_name = tweet["user"]["screen_name"]
+                                text = tweet["text"]
+                                tweet_id = tweet["id"]
+                                links = tweet["entities"]["urls"][0]
+                                output[count] = [ user, text, tweet_id, links, screen_name ]
+                                count += 1
+                        }
+
+                        #make our output prettier
+                        feed_pretty(output)
+               else
+                        puts "Could not get the feed!" +
+                        "Code:#{response.code} Body:#{response.body}"
+               end
+        end
+
+        def welcome_mesg
+                puts "Welcome to CLI-twit, the Command Line Interface for Twitter."
+                puts "Please enter a command:"
+        end
+
+        def help
+                puts "Command List:"
+                puts "  'home' or 'h':"
+                puts "      View your home feed"
+                puts "  'post' or 'p':"
+                puts "      Write a post"
+                puts "  'user' or 'u':"
+                puts "      View another user's feed (requires username)"
+                puts "  'help' or '?':"
+                puts "      View this menu"
+                puts "  'quit' or 'q':"
+                puts "      Exit the program"
+        end
+
+
+        def begin
+                if datafile_exists() == true
+                        #cat_data()
+                else
+                        create_new_datafile() # both consumer info and access token are gathered in this step
+                        #cat_data()
+                end
+
+
+                welcome_mesg()
+
+                #main loop
+                input = ""
+                quit = false
+                until quit == true
+                        print ": "
+                        input = gets.chomp.downcase
+                        if input == "home" || input == 'h'
+                                get_home_timeline()
+                        elsif input == "emoh"
+                                get_emoh_timeline()
+                        elsif input == "post" || input == 'p'
+                                write_post()
+                        elsif input == "user" || input == 'u'
+                                get_user_feed()
+                        elsif input == "help" || input == '?'
+                                help()
+                        elsif input == "quit" || input == 'q'
+                                quit = true
+                        else
+                                puts "Unrecognized command."
+                        end
+                        sleep(0.1)
+                end
+        end
+end
+
+session = Twitter.new("access")
+
+session.begin
