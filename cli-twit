@@ -6,6 +6,7 @@ require 'json'
 require 'net/http'
 require 'rake'
 require 'io/console'
+require 'curses'
 
 class Twitter
         def initialize(accessfile)
@@ -401,23 +402,27 @@ class Twitter
         end
 
         def header
-                header = "
-       ________   ____      ___      __________ 
-      /       /  /   /     /   /    /         /           __
-     /   ____/  /   /     /   /    /___   ___/           /_/   __
-    /   /      /   /     /   / ____   /  /   __     __  _   __/ /_
-   /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/
-  /   /____  /   /___  /   /        /  /   / / // / / / /   / /
- /        / /       / /   /        /  /   / /_//_/ / / /   / /
-/________/ /_______/ /___/        /__/   /________/ /_/   /_/
- 
-------------------------------------------------------------------
-"
-                puts header
+                header = []
+                header << "       ________   ____      ___      __________ "
+                header << "      /       /  /   /     /   /    /         /           __"
+                header << "     /   ____/  /   /     /   /    /___   ___/           /_/   __"
+                header << "    /   /      /   /     /   / ____   /  /   __     __  _   __/ /_"
+                header << "   /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/"
+                header << "  /   /____  /   /___  /   /        /  /   / / // / / / /   / /"
+                header << " /        / /       / /   /        /  /   / /_//_/ / / /   / /"
+                header << "/________/ /_______/ /___/        /__/   /________/ /_/   /_/"
+
+                return header
+        end
+
+        def print_bar(num)
+                bar = ""
+                num.times { bar << "-" }
+                return bar
         end
 
         def help
-                help = ""
+                help = []
                 help << "Command syntax:\n"
                 help << "  <command>: <parameter1>,<parameter2>,<etc...>\n"
                 help << "\n"
@@ -468,65 +473,87 @@ class Twitter
 	end
 
 	def output(input)
-		puts `clear`
-		header()
-		print input
+                #output = Curses::Window.new
 	end
 
-	def get_command(r, c)
-                input = ""
-                output("Please enter a command:\n")
-                while true
-                        print "# "
-                        input = gets.chomp.downcase
-                        if input == "home" || input == 'h'
+        def process_command( command,r,c )
+                case command
+                        when command =~ /^home:/ || command =~ /^h:/
                                 timeline = get_home_timeline(r)
 				output( timeline )
-                        elsif input =~ /^post:/ || input =~ /^p:/
-                                post = input.split(": ")[1]
+                        when command =~ /^post:/ || command =~ /^p:/
+                                post = command.split(": ")[1]
                                 output( post_tweet(post) )
-                        elsif input =~ /^reply:/ || input =~ /^rp:/
-                                reply = input.split(": ")[1]
+                        when command =~ /^reply:/ || command =~ /^rp:/
+                                reply = command.split(": ")[1]
                                 name = reply.split(",")[0]
                                 id = reply.split(",")[1]
                                 text = reply.split(",")[2..-1].join(",")
                                 reply_output = post_reply(name, id, text)
                                 output ( reply_output )
-                        elsif input =~ /^retweet:/ || input =~ /^rt:/
-                                id = input.split(": ")[1]
+                        when command =~ /^retweet:/ || command =~ /^rt:/
+                                id = command.split(": ")[1]
                                 output( retweet(id) )
-                        elsif input =~ /^user:/ || input =~ /^u:/
-                                user = input.split(": ")[1]
+                        when command =~ /^user:/ || command =~ /^u:/
+                                user = command.split(": ")[1]
                                 user_feed = get_user_feed(user, r)
                                 output ( user_feed )
-                        elsif input =~ /^fav:/ || input =~ /^f:/
-                                id = input.split(": ")[1]
+                        when command =~ /^fav:/ || command =~ /^f:/
+                                id = command.split(": ")[1]
                                 output( favorite(id) )
-                        elsif input =~ /^unfav:/ || input =~ /^uf:/
-                                id = input.split(": ")[1]
+                        when command =~ /^unfav:/ || command =~ /^uf:/
+                                id = command.split(": ")[1]
                                 output( unfavorite(id) )
-                        elsif input =~ /^follow:/ || input =~ /^fo:/
-                                user = input.split(": ")[1]
+                        when command =~ /^follow:/ || command =~ /^fo:/
+                                user = command.split(": ")[1]
                                 output( follow_user(user) )
-                        elsif input =~ /^unfollow:/ || input =~ /^ufo:/
-                                user = input.split(": ")[1]
+                        when command=~ /^unfollow:/ || command =~ /^ufo:/
+                                user = command.split(": ")[1]
                                 output( unfollow_user(user) )
-                        elsif input =~ /^delete:/ || input =~ /^d:/
-                                post = input.split(": ")[1]
+                        when command =~ /^delete:/ || command =~ /^d:/
+                                post = command.split(": ")[1]
                                 output( delete_post(post) )
-                        elsif input == "help" || input == '?'
+                        when command =~ /^help$/ || command =~ /^?$/
                                 output( help() )
-                        elsif input == "quit" || input == 'q'
+                        when command =~ /^quit$/ || command =~ /^q$/
 				exit
                         else
-                                if input == ""
+                                if command == ""
                                         output("Please enter a command:\n")
                                 else
                                         output( "Unrecognized command.\n" )
                                 end
                         end
-                        sleep(0.1)
-               end
+        end
+        
+	def get_command(r, c)
+                getcom = Curses::Window.new(r,c,0,0)
+                getcom.box('|','-','#')
+                getcom.setpos( (r - 2),1 )
+
+                #declare line incrementor for output
+                i = 1 
+
+                #draw the cli-twit header
+                head = header()
+                head.each do |line|
+                        getcom.setpos(i,1)
+                        getcom.addstr(line)
+                        i += 1
+                end
+
+                #draw the bar below the header
+                getcom.setpos(i,1)
+                getcom.addstr( print_bar( c - 2 ) )
+                i += 1
+                getcom.setpos(i,1)
+
+                getcom.addstr(":")
+                Curses.echo
+                command = getcom.getstr
+                Curses.noecho
+                
+                process_command( command,r,c )
 	end
 
         def begin
@@ -535,8 +562,45 @@ class Twitter
                 end
 
 		rows, columns = $stdin.winsize
-		if rows > 22 and columns > 66
-			get_command(rows, columns)
+
+                if rows > 22 and columns > 66
+                        #draw our first window and set echo off
+                        Curses.noecho
+                        screen = Curses::Window.new(rows,columns,0,0)
+                        screen.box('|','-','#')
+
+                        #declare line incrementor for output
+                        i = 1 
+
+                        #draw the cli-twit header
+                        head = header()
+                        head.each do |line|
+                                screen.setpos(i,1)
+                                screen.addstr(line)
+                                i += 1
+                        end
+
+                        #draw the bar below the header
+                        screen.setpos(i,1)
+                        screen.addstr( print_bar( columns - 2 ) )
+                        i += 1
+
+                        #prompt for input
+                        screen.setpos(i,1)
+                        screen.addstr("Press ':' to enter command mode")
+                        i+= 1
+                        screen.setpos(i,1)
+
+                        loop do 
+                                input = screen.getch
+
+                                if input == ':'
+                                        screen.close
+                                        get_command(rows, columns)
+                                        #exit cleanly from this loop
+                                        exit
+                                end
+                        end
 		else
 			puts `clear`
 			puts "The terminal size is too small."
@@ -552,3 +616,4 @@ end
 session = Twitter.new("access")
 
 session.begin
+
