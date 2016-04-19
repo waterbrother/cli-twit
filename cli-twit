@@ -90,9 +90,10 @@ class Twitter
                 @access = OAuth::Token.new(@token, @secret)
         end
 
-        def feed_pretty( feed_hash )
-                bar = "------------------------------------------------------------------\n"
-		pretty_output = ""
+        def feed_pretty( feed_hash, columns )
+                bar = print_bar( columns - 2 )
+                #bar = "------------------------------------------------------------------\n"
+		pretty_output = []
                 feed_hash.each { |tweet| # include tweet_id for replies
                         #make this a bit more readable
                         user = tweet[1][0]
@@ -118,26 +119,26 @@ class Twitter
                         date = tweet[1][7]
 
                         #count the username and create the tabspace until the text
-                        pretty_output << "    #{user} @#{screen_name}\n"
+                        pretty_output << "    #{user} @#{screen_name}"
                         pretty_output << "    " + text
-                        pretty_output << "\n"
+                        pretty_output << ""
                         #dealing with PITA urls
                         if link_hash != nil
                                 link = link_hash["expanded_url"]
                                 if link.length > 50
                                         link = link_hash["url"]
-                                        pretty_output << "    link: #{link}\n"
+                                        pretty_output << "    link: #{link}"
                                 else
-                                        pretty_output << "    link: #{link}\n"
+                                        pretty_output << "    link: #{link}"
                                 end
                         elsif "#{text_array[1]}".length > 1
-                                pretty_output << "    link: http#{text_array[1]}\n"
+                                pretty_output << "    link: http#{text_array[1]}"
                         end
-			pretty_output << "    .........................\n"
-                        pretty_output << "    tweet id: #{tweet_id}\n"
-                        pretty_output << "    retweets: #{num_retw}\n"
-                        pretty_output << "    favorites: #{num_favs}\n"
-                        pretty_output << "    date posted: #{date}\n"
+			pretty_output << "    ........................."
+                        pretty_output << "    tweet id: #{tweet_id}"
+                        pretty_output << "    retweets: #{num_retw}"
+                        pretty_output << "    favorites: #{num_favs}"
+                        pretty_output << "    date posted: #{date}"
                         pretty_output << bar
                 }
 		return pretty_output
@@ -172,47 +173,49 @@ class Twitter
         end
 
         def favorite(favorite_id)
-                output = ""
+                output = []
 
                 if favorite_id != nil
                         api_call( :post, "/1.1/favorites/create.json", {"id" => favorite_id} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output =  "Tweet has been favorited: #{tweet["text"]}\n"
+                                output << "Tweet has been favorited: #{tweet["text"]}"
                         else
-                                output =  "Tweet failed to be favorited: #{@response.body}"
+                                output << "Tweet failed to be favorited: #{@response.body}"
                         end
                 else
-                        output = "Please pass tweet id as an argument to this function.\n"
+                        output << "Please pass tweet id as an argument to this function."
                 end
 
                 return output
         end
 
         def unfavorite(favorite_id)
-                output = ""
+                output = []
 
                 if favorite_id != nil
                         api_call( :post, "/1.1/favorites/destroy.json", {"id" => favorite_id} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output = "Tweet has been unfavorited: #{tweet["text"]}\n"
+                                output << "Tweet has been unfavorited: #{tweet["text"]}"
                         else
-                                output = "Tweet failed to be unfavorited: #{@response.body}\n"
+                                output << "Tweet failed to be unfavorited: #{@response.body}"
                         end
                 else
-                        output = "Please pass tweet id as an argument to this function.\n"
+                        output << "Please pass tweet id as an argument to this function."
                 end
 
                 return output
         end
 
  
-        def get_home_timeline(rows)
+        def get_home_timeline(rows,columns,num_posts)
 		#minus 11 for the head
 		#divided by 10 lines per tweet
+                #soon this will be replaced by user specification once i figure out how to 
+                #make the text scroll in the screen, hence passing the number of posts in the args
 		max_tweets = ( (rows - 11).to_f/10 ).floor
                 api_call( :get, "/1.1/statuses/home_timeline.json", {"count" => max_tweets} )
 
@@ -235,38 +238,36 @@ class Twitter
                                 count += 1
                         }
 
-                        #puts output
-
                         #make our output prettier
-                        return feed_pretty(output)
+                        return feed_pretty(output, columns)
                 else
-                        return "Could not get the feed! Code:#{@response.code} Body:#{@response.body}"
+                        return ["Could not get the feed! Code:#{@response.code} Body:#{@response.body}"]
                 end
         end
 
         def post_tweet(text)
-                output = ""
+                output = []
 
                 if text != nil and text.length > 140
-                        output = "Tweet text is more than 140 characters. Post aborted.\n"
+                        output << "Tweet text is more than 140 characters. Post aborted."
                 elsif text != nil and text.length <= 140
                         api_call( :post, "/1.1/statuses/update.json", {"status" => text} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output = "Tweet has been posted: #{tweet["text"]}\n"
+                                output << "Tweet has been posted: #{tweet["text"]}"
                         else
-                                output = "Tweet failed to post: #{@response.body}\n"
+                                output << "Tweet failed to post: #{@response.body}"
                         end
                 else
-                        output = "No tweet text given. Post aborted.\n"
+                        output << "No tweet text given. Post aborted."
                 end
 
                 return output
         end
 
         def post_reply(username, tweet_id, text)
-                output = ""
+                output = []
 
                 all_good = true if username != nil and tweet_id != nil and text != nil and username =~ /@/
 
@@ -274,64 +275,64 @@ class Twitter
                         tweet_length = username.length + text.length
                         
                         if tweet_length > 140
-                                output = "Tweet length more than 140 characters. Reply aborted.\n"
+                                output << "Tweet length more than 140 characters. Reply aborted."
                         else
                                 final_text = "#{username} #{text}"
                                 api_call( :post, "/1.1/statuses/update.json", {"status" => final_text, "in_reply_to_status_id" => tweet_id} )
                                 
                                 if @response.code == '200'
                                         tweet = JSON.parse(@response.body)
-                                        output =  "Tweet has been posted: #{tweet["text"]}\n"
+                                        output <<  "Tweet has been posted: #{tweet["text"]}"
                                 else
-                                        output << "Tweet failed to post: #{@response.body}\n"
+                                        output << "Tweet failed to post: #{@response.body}"
                                 end
                         end
                 else
-                        output = "Please check your parameters. See help function for more info.\n"
+                        output << "Please check your parameters. See help function for more info."
                 end
 
                 return output
         end
 
         def retweet(tweet_id)
-                output = ""
+                output = []
 
                 if tweet_id != nil
                         api_call( :post, "/1.1/statuses/retweet/#{tweet_id}.json", {} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output = "Tweet has been posted: #{tweet["text"]}\n"
+                                output << "Tweet has been posted: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to post: #{@response.body}\n"
+                                output << "Tweet failed to post: #{@response.body}"
                         end
                 else
-                        output = "Tweet id empty. Retweeting aborted.\n"
+                        output << "Tweet id empty. Retweeting aborted."
                 end
 
                 return output
         end
 
         def delete_post(tweet_id)
-                output = ""
+                output = []
 
                 if tweet_id != nil
                         api_call( :post, "/1.1/statuses/destroy.json", {"id" => tweet_id} )
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output = "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}\n"
+                                output << "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}"
                         else
-                                output = "Tweet failed to delete: #{@response.body}\n"
+                                output << "Tweet failed to delete: #{@response.body}"
                         end
                 else
-                        output = "No tweet ID given; deletion aborted.\n"
+                        output << "No tweet ID given; deletion aborted."
                 end
 
                 return output
         end
 
         def follow_user(username)
-                output = ""
+                output = []
 
                 if username != nil
                         api_call( :post, "/1.1/friendships/create.json", { "screen_name" => username, "follow" => true } )
@@ -339,19 +340,19 @@ class Twitter
                                 confirm = JSON.parse(@response.body)
                                 user_followed = confirm["screen_name"]
                                 real_name = confirm["name"]
-                                output = "Now following user #{user_followed}: #{real_name}\n"
+                                output << "Now following user #{user_followed}: #{real_name}"
                         else
-                                output = "Failed to follow user: #{@response.body}\n"
+                                output << "Failed to follow user: #{@response.body}"
                         end
                 else
-                        output = "Follow failed; username cannot be empty.\n"
+                        output << "Follow failed; username cannot be empty."
                 end
 
                 return output
         end
 
         def unfollow_user(username)
-                output = ""
+                output = []
 
                 if username != nil
                         api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username })
@@ -359,18 +360,18 @@ class Twitter
                                 confirm = JSON.parse(@response.body)
                                 user_unfollowed = confirm["screen_name"]
                                 real_name = confirm["name"]
-                                output =  "Unfollowed user #{user_unfollowed}: #{real_name}"
+                                output <<  "Unfollowed user #{user_unfollowed}: #{real_name}"
                         else
-                                output = "Failed to follow user: #{@response.body}"
+                                output << "Failed to follow user: #{@response.body}"
                         end
                 else
-                        output = "Unfollow failed; username cannot be empty.\n"
+                        output << "Unfollow failed; username cannot be empty."
                 end
 
                 return output
          end
 
-         def get_user_feed(username, rows)
+         def get_user_feed(username, rows, columns )
 		#minus 11 for the head
 		#divided by 10 lines per tweet
 		max_tweets = ( (rows - 11).to_f/10 ).floor
@@ -394,7 +395,7 @@ class Twitter
                         }
 
                         #make our output prettier
-                        return feed_pretty(output)
+                        return feed_pretty(output, columns)
                else
                         return "Could not get the feed!" +
                         "Code:#{@response.code} Body:#{@response.body}"
@@ -423,46 +424,46 @@ class Twitter
 
         def help
                 help = []
-                help << "Command syntax:\n"
-                help << "  <command>: <parameter1>,<parameter2>,<etc...>\n"
-                help << "\n"
-                help << "Command List:\n"
-                help << "  'home' or 'h':\n"
-                help << "      View your home feed\n"
-                help << "      home\n"
-                help << "  'post' or 'p':\n"
-                help << "      Write a post\n"
-                help << "      post: <tweet_text>\n"
-                help << "  'reply' or 'rp':\n"
-                help << "      Reply to a tweet\n"
-                help << "      reply: <username>,<tweet_id>,<reply_text>\n"
-                help << "  'retweet' or 'rt':\n"
-                help << "      Retweet a tweet\n"
-                help << "      retweet: <tweet_id>\n"
-                help << "  'user' or 'u':\n"
-                help << "      View another user's feed\n"
-                help << "      user: <username>\n"
-                help << "  'fav' or 'f':\n"
-                help << "      Mark a post as favorite\n"
-                help << "      fav: <tweet_id>\n"
-                help << "  'unfav' or 'uf':\n"
-                help << "      Unmark a post as favorite\n"
-                help << "      unfav: <tweet_id>\n"
-                help << "  'follow' or 'fo':\n"
-                help << "      Follow a user's tweets\n"
-                help << "      follow: <username>\n"
-                help << "  'unfolow' or 'ufo':\n"
-                help << "      Unfollow a user's tweets\n"
-                help << "      unfollow: <username>\n"
-                help << "  'delete' or 'd':\n"
-                help << "      Delete one of your posts (must be your own)\n"
-                help << "      delete: <tweet_id>\n"
-                help << "  'help' or '?':\n"
-                help << "      View this menu\n"
-                help << "      help\n"
-                help << "  'quit' or 'q':\n"
-                help << "      Exit the program\n"
-                help << "      quit\n"
+                help << "Command syntax:"
+                help << "  <command>: <parameter1>,<parameter2>,<etc...>"
+                help << ""
+                help << "Command List:"
+                help << "  'home' or 'h':"
+                help << "      View your home feed"
+                help << "      home"
+                help << "  'post' or 'p':"
+                help << "      Write a post"
+                help << "      post: <tweet_text>"
+                help << "  'reply' or 'rp':"
+                help << "      Reply to a tweet"
+                help << "      reply: <username>,<tweet_id>,<reply_text>"
+                help << "  'retweet' or 'rt':"
+                help << "      Retweet a tweet"
+                help << "      retweet: <tweet_id>"
+                help << "  'user' or 'u':"
+                help << "      View another user's feed"
+                help << "      user: <username>"
+                help << "  'fav' or 'f':"
+                help << "      Mark a post as favorite"
+                help << "      fav: <tweet_id>"
+                help << "  'unfav' or 'uf':"
+                help << "      Unmark a post as favorite"
+                help << "      unfav: <tweet_id>"
+                help << "  'follow' or 'fo':"
+                help << "      Follow a user's tweets"
+                help << "      follow: <username>"
+                help << "  'unfolow' or 'ufo':"
+                help << "      Unfollow a user's tweets"
+                help << "      unfollow: <username>"
+                help << "  'delete' or 'd':"
+                help << "      Delete one of your posts (must be your own)"
+                help << "      delete: <tweet_id>"
+                help << "  'help' or '?':"
+                help << "      View this menu"
+                help << "      help"
+                help << "  'quit' or 'q':"
+                help << "      Exit the program"
+                help << "      quit"
                 return help
         end
 
@@ -472,58 +473,95 @@ class Twitter
 		return row_center, col_center
 	end
 
-	def output(input)
-                #output = Curses::Window.new
-	end
+	def output(input, rows, columns)
+                #draw our first window and set echo off
+                Curses.noecho
+                screen = Curses::Window.new(rows,columns,0,0)
+                screen.box('|','-','#')
 
-        def process_command( command,r,c )
-                case command
-                        when command =~ /^home:/ || command =~ /^h:/
-                                timeline = get_home_timeline(r)
-				output( timeline )
-                        when command =~ /^post:/ || command =~ /^p:/
-                                post = command.split(": ")[1]
-                                output( post_tweet(post) )
-                        when command =~ /^reply:/ || command =~ /^rp:/
-                                reply = command.split(": ")[1]
-                                name = reply.split(",")[0]
-                                id = reply.split(",")[1]
-                                text = reply.split(",")[2..-1].join(",")
-                                reply_output = post_reply(name, id, text)
-                                output ( reply_output )
-                        when command =~ /^retweet:/ || command =~ /^rt:/
-                                id = command.split(": ")[1]
-                                output( retweet(id) )
-                        when command =~ /^user:/ || command =~ /^u:/
-                                user = command.split(": ")[1]
-                                user_feed = get_user_feed(user, r)
-                                output ( user_feed )
-                        when command =~ /^fav:/ || command =~ /^f:/
-                                id = command.split(": ")[1]
-                                output( favorite(id) )
-                        when command =~ /^unfav:/ || command =~ /^uf:/
-                                id = command.split(": ")[1]
-                                output( unfavorite(id) )
-                        when command =~ /^follow:/ || command =~ /^fo:/
-                                user = command.split(": ")[1]
-                                output( follow_user(user) )
-                        when command=~ /^unfollow:/ || command =~ /^ufo:/
-                                user = command.split(": ")[1]
-                                output( unfollow_user(user) )
-                        when command =~ /^delete:/ || command =~ /^d:/
-                                post = command.split(": ")[1]
-                                output( delete_post(post) )
-                        when command =~ /^help$/ || command =~ /^?$/
-                                output( help() )
-                        when command =~ /^quit$/ || command =~ /^q$/
-				exit
-                        else
-                                if command == ""
-                                        output("Please enter a command:\n")
-                                else
-                                        output( "Unrecognized command.\n" )
-                                end
+                #declare line incrementor for output
+                i = 1 
+
+                #draw the cli-twit header
+                head = header()
+                head.each do |line|
+                        screen.setpos(i,1)
+                        screen.addstr(line)
+                        i += 1
+                end
+
+                #draw the bar below the header
+                screen.setpos(i,1)
+                screen.addstr( print_bar( columns - 2 ) )
+                i += 1
+
+                #display text output
+                screen.setpos(i,1)
+                input.each do |line|
+                        screen.setpos(i,1)
+                        screen.addstr(line)
+                        i += 1
+                end
+                screen.setpos(i,1)
+
+                #read input
+                loop do 
+                        input = screen.getch
+
+                        if input == ':'
+                                screen.close
+                                get_command(rows, columns)
+                                #exit cleanly from this loop
+                                exit
                         end
+                end
+        end
+
+        def process_command( command,param,r,c )
+                #output command expects an array
+                #declare it here so we can get it later
+                text_output = Array.new
+
+                #maybe we shuold sanitize our parameter first before blindly passing it to the following functions
+                #:: code goes here
+                
+                case command
+                when /^home/, /^h/
+                        #set default number if none given
+                        param = 10 if param == nil
+                        param = 10 if param == 0
+                        text_output = get_home_timeline(r,c,param)
+                when /^post:/, /^p:/
+                        text_output = post_tweet(param)
+                when /^reply:/, /^rp:/
+                        name = param.split(",")[0]
+                        id = param.split(",")[1]
+                        text = param.split(",")[2..-1].join(",")#a little extra magic to allow for commas in the text
+                        text_output = post_reply(name, id, text)
+                when /^retweet:/, /^rt:/
+                        text_output = retweet(param)
+                when /^user:/, /^u:/
+                        text_output = get_user_feed(param, r, c)
+                when /^fav:/, /^f:/
+                        text_output =  favorite(param)
+                when /^unfav:/, /^uf:/
+                        text_output = unfavorite(param)
+                when /^follow:/, /^fo:/
+                        text_output = follow_user(param)
+                when /unfollow:/, /^ufo:/
+                        text_output( unfollow_user(user), r, c )
+                when /^delete:/, /^d:/
+                        text_output = delete_post(param)
+                when/^help$/, /^\?$/
+                        text_output = help()
+                when /^quit$/, /^q$/
+			exit
+                else
+                        text_output = ["Unrecognized command: \'#{command}\'"]
+                end
+
+                #pull the trigger
+                output( text_output, r, c )
         end
         
 	def get_command(r, c)
@@ -551,9 +589,10 @@ class Twitter
                 getcom.addstr(":")
                 Curses.echo
                 command = getcom.getstr
+                param = command.split(": ")[1]
                 Curses.noecho
                 
-                process_command( command,r,c )
+                process_command( command,param,r,c )
 	end
 
         def begin
@@ -564,43 +603,7 @@ class Twitter
 		rows, columns = $stdin.winsize
 
                 if rows > 22 and columns > 66
-                        #draw our first window and set echo off
-                        Curses.noecho
-                        screen = Curses::Window.new(rows,columns,0,0)
-                        screen.box('|','-','#')
-
-                        #declare line incrementor for output
-                        i = 1 
-
-                        #draw the cli-twit header
-                        head = header()
-                        head.each do |line|
-                                screen.setpos(i,1)
-                                screen.addstr(line)
-                                i += 1
-                        end
-
-                        #draw the bar below the header
-                        screen.setpos(i,1)
-                        screen.addstr( print_bar( columns - 2 ) )
-                        i += 1
-
-                        #prompt for input
-                        screen.setpos(i,1)
-                        screen.addstr("Press ':' to enter command mode")
-                        i+= 1
-                        screen.setpos(i,1)
-
-                        loop do 
-                                input = screen.getch
-
-                                if input == ':'
-                                        screen.close
-                                        get_command(rows, columns)
-                                        #exit cleanly from this loop
-                                        exit
-                                end
-                        end
+                        output(["Press ':' to enter a command"], rows, columns)
 		else
 			puts `clear`
 			puts "The terminal size is too small."
