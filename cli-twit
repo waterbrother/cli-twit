@@ -473,51 +473,76 @@ class Twitter
 		return row_center, col_center
 	end
 
-	def output(input, rows, columns)
-                #draw our first window and set echo off
+	def draw_window
+                ###################################
+                #  I AM THE MASTER OUTPUT METHOD! #
+                #NO ONE SHOULD DRAW WINDOWS BUT ME#
+                ###################################
+
+                #determine screen size here.
+                #this is the first, last, and only place this will be decided.
+                #if the user resizes the terminal after this, it will fuck everything up.
+		@rows, @columns = $stdin.winsize
+
+                #draw our window and set echo off
+                #all other methods will clear and redraw this window
                 Curses.noecho
-                screen = Curses::Window.new(rows,columns,0,0)
-                screen.box('|','-','#')
+                #enable keypad - necessary for pageup/pagedown & direction buttons
+                Curses.stdscr.keypad( true )
+                @screen = Curses::Window.new(@rows,@columns,0,0)
+                @screen.box('|','-','#')
+        end
+
+        def populate_window( input )
+                ################################################################
+                #  I AM THE METHOD THAT POPULATES THE MASTER WINDOW WITH DATA  #
+                #               I CLEAR THE MASTER AND WRITE OUTPUT            #
+                ################################################################
+
+                #clear anything that was written to the screen before this
+                @screen.clear
 
                 #declare line incrementor for output
                 i = 1 
-
                 #draw the cli-twit header
                 head = header()
                 head.each do |line|
-                        screen.setpos(i,1)
-                        screen.addstr(line)
+                        @screen.setpos(i,1)
+                        @screen.addstr(line)
                         i += 1
                 end
 
                 #draw the bar below the header
-                screen.setpos(i,1)
-                screen.addstr( print_bar( columns - 2 ) )
+                @screen.setpos(i,1)
+                @screen.addstr( print_bar( @columns - 2 ) )
                 i += 1
 
+                #TODO: make status bar here for private messages and notifications
+
                 #display text output
-                screen.setpos(i,1)
+                @screen.setpos(i,1)
                 input.each do |line|
-                        screen.setpos(i,1)
-                        screen.addstr(line)
+                        @screen.setpos(i,1)
+                        @screen.addstr(line)
                         i += 1
                 end
-                screen.setpos(i,1)
+                @screen.setpos(i,1)
+        end
 
-                #read input
+        def read_input
                 loop do 
-                        input = screen.getch
+                        input = @screen.getch
 
-                        if input == ':'
-                                screen.close
-                                get_command(rows, columns)
-                                #exit cleanly from this loop
-                                exit
+                        case input
+
+                        when ':'
+                                get_command()
                         end
                 end
         end
 
-        def process_command( command,param,r,c )
+
+        def process_command( command,param )
                 #output command expects an array
                 #declare it here so we can get it later
                 text_output = Array.new
@@ -530,7 +555,7 @@ class Twitter
                         #set default number if none given
                         param = 10 if param == nil
                         param = 10 if param == 0
-                        text_output = get_home_timeline(r,c,param)
+                        text_output = get_home_timeline(@rows,@columns,param)
                 when /^post:/, /^p:/
                         text_output = post_tweet(param)
                 when /^reply:/, /^rp:/
@@ -541,7 +566,7 @@ class Twitter
                 when /^retweet:/, /^rt:/
                         text_output = retweet(param)
                 when /^user:/, /^u:/
-                        text_output = get_user_feed(param, r, c)
+                        text_output = get_user_feed(param, @rows, @columns)
                 when /^fav:/, /^f:/
                         text_output =  favorite(param)
                 when /^unfav:/, /^uf:/
@@ -549,7 +574,7 @@ class Twitter
                 when /^follow:/, /^fo:/
                         text_output = follow_user(param)
                 when /unfollow:/, /^ufo:/
-                        text_output( unfollow_user(user), r, c )
+                        text_output = unfollow_user(user)
                 when /^delete:/, /^d:/
                         text_output = delete_post(param)
                 when/^help$/, /^\?$/
@@ -560,39 +585,23 @@ class Twitter
                         text_output = ["Unrecognized command: \'#{command}\'"]
                 end
 
-                #pull the trigger
-                output( text_output, r, c )
+                #burger's done
+                return text_output
         end
         
-	def get_command(r, c)
-                getcom = Curses::Window.new(r,c,0,0)
-                getcom.box('|','-','#')
-                getcom.setpos( (r - 2),1 )
-
-                #declare line incrementor for output
-                i = 1 
-
-                #draw the cli-twit header
-                head = header()
-                head.each do |line|
-                        getcom.setpos(i,1)
-                        getcom.addstr(line)
-                        i += 1
-                end
-
-                #draw the bar below the header
-                getcom.setpos(i,1)
-                getcom.addstr( print_bar( c - 2 ) )
-                i += 1
-                getcom.setpos(i,1)
-
-                getcom.addstr(":")
+	def get_command
+                populate_window( [] )
+                @screen.addstr(":")
                 Curses.echo
-                command = getcom.getstr
+                command = @screen.getstr
                 param = command.split(": ")[1]
                 Curses.noecho
                 
-                process_command( command,param,r,c )
+                #this is where the snake eats its tail:
+                #we loop back on ourselves here.
+                text_array = process_command( command,param )
+                populate_window( text_array )
+                read_input()
 	end
 
         def begin
@@ -600,15 +609,20 @@ class Twitter
                         create_new_datafile() # both consumer info and access token are gathered in this step
                 end
 
-		rows, columns = $stdin.winsize
 
+                #check screen size here first before we launch.
+                #this will be checks again when the output screen is drawn.
+		rows, columns = $stdin.winsize
                 if rows > 22 and columns > 66
-                        output(["Press ':' to enter a command"], rows, columns)
+                        draw_window
+                        populate_window( ["Press ':' to enter a command"] )
+                        read_input()
+                        
 		else
 			puts `clear`
 			puts "The terminal size is too small."
 			puts "The terminal must be"
-			pust "at least 22 characters tall"
+			puts "at least 22 characters tall"
 			puts "and 66 characters wide."
 			puts "Please resize and run again."
 			exit
