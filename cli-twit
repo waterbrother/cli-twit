@@ -566,16 +566,24 @@ class Twitter
 
                         when ':'
                                 get_command()
+                        when 'k'
+                                scroll_up()
+                        when 'j'
+                                scroll_down()
                         end
                 end
         end
 
-        def scroll_up( text_array )
-                return text_array[1..-1]
+        def scroll_up
+                @text_begin -= 1 if @text_begin > 0
+                populate_window( @text_output[@text_begin..-1] )
+                read_input()
         end
 
-        def scroll_down( text_array )
-                return text
+        def scroll_down()
+                @text_begin += 1 if @text_begin <= @text_end - @info_panel_size
+                populate_window( @text_output[@text_begin..-1] )
+                read_input()
         end
 
         def process_command( command, params )
@@ -591,40 +599,42 @@ class Twitter
                 when /^home/, /^h$/
                         tweets = params[0]
                         tweets = 20 if tweets == nil
-                        text_output = get_home_timeline( tweets )
+                        @text_output = get_home_timeline( tweets )
                 when /^post/, /^p/
                         text_output = post_tweet( params.join(" ") )
                 when /^reply/, /^rp/
                         name = params[0].split(",")[0]
                         id = params[0].split(",")[1]
                         text = params[0].split(",")[2..-1].join(",")#a little extra magic to allow for commas in the text
-                        text_output = post_reply( name, id, text )
+                        @text_output = post_reply( name, id, text )
                 when /^retweet/, /^rt/
                         text_output = retweet( params[0] )
                 when /^user/, /^u/
                         user, tweets = params
                         tweets = 20 if tweets == nil
-                        text_output = get_user_feed( user, tweets )
+                        @text_output = get_user_feed( user, tweets )
                 when /^fav/, /^f/
-                        text_output =  favorite( params[0] )
+                        @text_output =  favorite( params[0] )
                 when /^unfav/, /^uf/
-                        text_output = unfavorite( params[0] )
+                        @text_output = unfavorite( params[0] )
                 when /^follow/, /^fo/
-                        text_output = follow_user( params[0] )
+                        @text_output = follow_user( params[0] )
                 when /unfollow/, /^ufo/
-                        text_output = unfollow_user( params[0] )
+                        @text_output = unfollow_user( params[0] )
                 when /^delete/, /^d/
-                        text_output = delete_post( params[0] )
+                        @text_output = delete_post( params[0] )
                 when/^help$/, /^\?$/
-                        text_output = help()
+                        @text_output = help()
                 when /^quit/, /^q/
 			exit
                 else
-                        text_output = ["Unrecognized command: \'#{command}\'"]
+                        @text_output = [ "Unrecognized command: \'#{command}\'" ]
                 end
 
                 #burger's done
-                return text_output
+                @text_end = @text_output.length
+                populate_window( @text_output )
+                read_input()
         end
         
 	def get_command
@@ -634,11 +644,13 @@ class Twitter
                 params = command.split(" ")[1..-1]
                 Curses.noecho
                 
+                #set the beginning of our text.
+                #this will be reset everytime a new command is issued. 
+                @text_begin = 0
+                
                 #this is where the snake eats its tail:
                 #we loop back on ourselves here.
-                text_array = process_command( command, params )
-                populate_window( text_array )
-                read_input()
+                process_command( command, params )
 	end
 
         def begin
