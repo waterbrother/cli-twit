@@ -90,9 +90,8 @@ class Twitter
                 @access = OAuth::Token.new(@token, @secret)
         end
 
-        def feed_pretty( feed_hash, columns )
-                bar = print_bar( columns - 2 )
-                #bar = "------------------------------------------------------------------\n"
+        def feed_pretty( feed_hash )
+                bar = print_bar( @columns - 2 )
 		pretty_output = []
                 feed_hash.each { |tweet| # include tweet_id for replies
                         #make this a bit more readable
@@ -211,13 +210,8 @@ class Twitter
         end
 
  
-        def get_home_timeline(rows,columns,num_posts)
-		#minus 11 for the head
-		#divided by 10 lines per tweet
-                #soon this will be replaced by user specification once i figure out how to 
-                #make the text scroll in the screen, hence passing the number of posts in the args
-		max_tweets = ( (rows - 11).to_f/10 ).floor
-                api_call( :get, "/1.1/statuses/home_timeline.json", {"count" => max_tweets} )
+        def get_home_timeline( num_tweets )
+                api_call( :get, "/1.1/statuses/home_timeline.json", {"count" => num_tweets} )
 
                 feed = nil
                 if @response.code == '200' then
@@ -239,7 +233,7 @@ class Twitter
                         }
 
                         #make our output prettier
-                        return feed_pretty(output, columns)
+                        return feed_pretty( output )
                 else
                         return ["Could not get the feed! Code:#{@response.code} Body:#{@response.body}"]
                 end
@@ -371,11 +365,8 @@ class Twitter
                 return output
          end
 
-         def get_user_feed(username, rows, columns )
-		#minus 11 for the head
-		#divided by 10 lines per tweet
-		max_tweets = ( (rows - 11).to_f/10 ).floor
-                api_call( :get, "/1.1/statuses/user_timeline.json", {"screen_name" => username, "count" => max_tweets })
+         def get_user_feed( username, num_tweets )
+                api_call( :get, "/1.1/statuses/user_timeline.json", {"screen_name" => username, "count" => num_tweets })
 
                 if @response.code == '200' then
                         feed =JSON.parse(@response.body)
@@ -395,7 +386,7 @@ class Twitter
                         }
 
                         #make our output prettier
-                        return feed_pretty(output, columns)
+                        return feed_pretty( output )
                else
                         return "Could not get the feed!" +
                         "Code:#{@response.code} Body:#{@response.body}"
@@ -425,45 +416,21 @@ class Twitter
         def help
                 help = []
                 help << "Command syntax:"
-                help << "  <command>: <parameter1>,<parameter2>,<etc...>"
+                help << "  <command> <parameter1>,<parameter2>,<etc...>"
                 help << ""
                 help << "Command List:"
-                help << "  'home' or 'h':"
-                help << "      View your home feed"
-                help << "      home"
-                help << "  'post' or 'p':"
-                help << "      Write a post"
-                help << "      post: <tweet_text>"
-                help << "  'reply' or 'rp':"
-                help << "      Reply to a tweet"
-                help << "      reply: <username>,<tweet_id>,<reply_text>"
-                help << "  'retweet' or 'rt':"
-                help << "      Retweet a tweet"
-                help << "      retweet: <tweet_id>"
-                help << "  'user' or 'u':"
-                help << "      View another user's feed"
-                help << "      user: <username>"
-                help << "  'fav' or 'f':"
-                help << "      Mark a post as favorite"
-                help << "      fav: <tweet_id>"
-                help << "  'unfav' or 'uf':"
-                help << "      Unmark a post as favorite"
-                help << "      unfav: <tweet_id>"
-                help << "  'follow' or 'fo':"
-                help << "      Follow a user's tweets"
-                help << "      follow: <username>"
-                help << "  'unfolow' or 'ufo':"
-                help << "      Unfollow a user's tweets"
-                help << "      unfollow: <username>"
-                help << "  'delete' or 'd':"
-                help << "      Delete one of your posts (must be your own)"
-                help << "      delete: <tweet_id>"
-                help << "  'help' or '?':"
-                help << "      View this menu"
-                help << "      help"
-                help << "  'quit' or 'q':"
-                help << "      Exit the program"
-                help << "      quit"
+                help << "  'home' or 'h'\tView your home feed"
+                help << "  'post' or 'p'\tWrite a post"
+                help << "  'reply' or 'rp'\tReply to a tweet"
+                help << "  'retweet' or 'rt'\tRetweet a tweet"
+                help << "  'user' or 'u'\tView another user's feed"
+                help << "  'fav' or 'f'   \tMark a post as favorite"
+                help << "  'unfav' or 'uf'\tUnmark a post as favorite"
+                help << "  'follow' or 'fo'\tFollow a user's tweets"
+                help << "  'unfolow' or 'ufo'\tUnfollow a user's tweets"
+                help << "  'delete' or 'd'\tDelete one of your posts (must be your own)"
+                help << "  'help' or '?'\tView this help menu"
+                help << "  'quit' or 'q'\tExit the program"
                 return help
         end
 
@@ -474,19 +441,21 @@ class Twitter
 	end
 
 	def draw_window
-                ###################################
-                #  I AM THE MASTER OUTPUT METHOD! #
-                #NO ONE SHOULD DRAW WINDOWS BUT ME#
-                ###################################
+                #######################################
+                #    I AM THE MASTER OUTPUT METHOD!   #
+                #  NO ONE SHOULD DRAW WINDOWS BUT ME  #
+                #######################################
 
                 #determine screen size here.
                 #this is the first, last, and only place this will be decided.
-                #if the user resizes the terminal after this, it will fuck everything up.
+                #if the user resizes the terminal after this,
+                #it will fuck everything up.
 		@rows, @columns = $stdin.winsize
-
+                
                 #draw our window and set echo off
                 #all other methods will clear and redraw this window
                 Curses.noecho
+                
                 #enable keypad - necessary for pageup/pagedown & direction buttons
                 Curses.stdscr.keypad( true )
                 @screen = Curses::Window.new(@rows,@columns,0,0)
@@ -503,30 +472,90 @@ class Twitter
                 @screen.clear
 
                 #declare line incrementor for output
-                i = 1 
+                @i = 1
+
+                ##########
+                # HEADER #
+                ##########
+                
                 #draw the cli-twit header
                 head = header()
                 head.each do |line|
-                        @screen.setpos(i,1)
+                        @screen.setpos(@i,1)
                         @screen.addstr(line)
-                        i += 1
+                        @i += 1
                 end
 
-                #draw the bar below the header
-                @screen.setpos(i,1)
+                #################
+                # NOTIFICATIONS #
+                #################
+                
+                #draw the bar
+                @screen.setpos(@i,1)
                 @screen.addstr( print_bar( @columns - 2 ) )
-                i += 1
-
+                @i += 1
                 #TODO: make status bar here for private messages and notifications
+                @screen.setpos(@i,1)
+                @screen.addstr( "NOTIFICATION BAR" )
+                @i += 1
+                #draw the bar again
+                @screen.setpos(@i,1)
+                @screen.addstr( print_bar( @columns - 2 ) )
+                @i += 1
+
+                #####################
+                # INFORMATION PANEL #
+                #####################
+                
+                #set the max amount of rows of information allowed
+                #in the window based on number of rows in the terminal,
+                #header hight, the notification bar, and the space needed
+                #at the bottom for command entry.
+                #defining this here will allow us to scroll through the 
+                #info panel with the arrow keys later
+                header_size = head.length
+                notification_bar_size = 3
+                command_bar_size  = 3
+                @info_panel_size = @rows - header_size - notification_bar_size - command_bar_size - 1#i don't know why this needs an extra row removed, but fuck it - it works
+
+                #if the input has fewer rows than the info panel, and blank rows to fill the panel
+                if input.length < @info_panel_size
+                        num_blank_rows = @info_panel_size - input.length
+                        num_blank_rows.times do
+                                input << ""
+                        end
+                #if the amount of input is greater than the info panel size, chop that shit to fit!
+                #considering the input, this is very likely unless the user specifies  a small amount.
+                elsif input.length > @info_panel_size
+                        input = input[0..( @info_panel_size - 1 )]
+                end
 
                 #display text output
-                @screen.setpos(i,1)
+                @screen.setpos(@i,1)
                 input.each do |line|
-                        @screen.setpos(i,1)
+                        @screen.setpos(@i,1)
                         @screen.addstr(line)
-                        i += 1
+                        @i += 1
                 end
-                @screen.setpos(i,1)
+                @screen.setpos(@i,1)
+
+                #################
+                # COMMAND PANEL #
+                #################
+
+                #draw the bar
+                @screen.setpos(@i,1)
+                @screen.addstr( print_bar( @columns - 2 ) )
+                @i += 1
+                @screen.setpos(@i,1)
+                #this mind intentionally left blank
+                @screen.addstr( "" )
+                @i += 1
+                #draw the bar again
+                @screen.setpos(@i,1)
+                @screen.addstr( print_bar( @columns - 2 ) )
+                @i -= 1
+                @screen.setpos(@i,1)
         end
 
         def read_input
@@ -541,45 +570,54 @@ class Twitter
                 end
         end
 
+        def scroll_up( text_array )
+                return text_array[1..-1]
+        end
 
-        def process_command( command,param )
+        def scroll_down( text_array )
+                return text
+        end
+
+        def process_command( command, params )
                 #output command expects an array
                 #declare it here so we can get it later
                 text_output = Array.new
 
-                #maybe we shuold sanitize our parameter first before blindly passing it to the following functions
+                #maybe we should sanitize our parameter first before blindly passing it to the following functions
                 #:: code goes here
+                #nah, fuck it.
                 
                 case command
-                when /^home/, /^h/
-                        #set default number if none given
-                        param = 10 if param == nil
-                        param = 10 if param == 0
-                        text_output = get_home_timeline(@rows,@columns,param)
-                when /^post:/, /^p:/
-                        text_output = post_tweet(param)
-                when /^reply:/, /^rp:/
-                        name = param.split(",")[0]
-                        id = param.split(",")[1]
-                        text = param.split(",")[2..-1].join(",")#a little extra magic to allow for commas in the text
-                        text_output = post_reply(name, id, text)
-                when /^retweet:/, /^rt:/
-                        text_output = retweet(param)
-                when /^user:/, /^u:/
-                        text_output = get_user_feed(param, @rows, @columns)
-                when /^fav:/, /^f:/
-                        text_output =  favorite(param)
-                when /^unfav:/, /^uf:/
-                        text_output = unfavorite(param)
-                when /^follow:/, /^fo:/
-                        text_output = follow_user(param)
-                when /unfollow:/, /^ufo:/
-                        text_output = unfollow_user(user)
-                when /^delete:/, /^d:/
-                        text_output = delete_post(param)
+                when /^home/, /^h$/
+                        tweets = params[0]
+                        tweets = 20 if tweets == nil
+                        text_output = get_home_timeline( tweets )
+                when /^post/, /^p/
+                        text_output = post_tweet( params.join(" ") )
+                when /^reply/, /^rp/
+                        name = params[0].split(",")[0]
+                        id = params[0].split(",")[1]
+                        text = params[0].split(",")[2..-1].join(",")#a little extra magic to allow for commas in the text
+                        text_output = post_reply( name, id, text )
+                when /^retweet/, /^rt/
+                        text_output = retweet( params[0] )
+                when /^user/, /^u/
+                        user, tweets = params
+                        tweets = 20 if tweets == nil
+                        text_output = get_user_feed( user, tweets )
+                when /^fav/, /^f/
+                        text_output =  favorite( params[0] )
+                when /^unfav/, /^uf/
+                        text_output = unfavorite( params[0] )
+                when /^follow/, /^fo/
+                        text_output = follow_user( params[0] )
+                when /unfollow/, /^ufo/
+                        text_output = unfollow_user( params[0] )
+                when /^delete/, /^d/
+                        text_output = delete_post( params[0] )
                 when/^help$/, /^\?$/
                         text_output = help()
-                when /^quit$/, /^q$/
+                when /^quit/, /^q/
 			exit
                 else
                         text_output = ["Unrecognized command: \'#{command}\'"]
@@ -590,16 +628,15 @@ class Twitter
         end
         
 	def get_command
-                populate_window( [] )
                 @screen.addstr(":")
                 Curses.echo
                 command = @screen.getstr
-                param = command.split(": ")[1]
+                params = command.split(" ")[1..-1]
                 Curses.noecho
                 
                 #this is where the snake eats its tail:
                 #we loop back on ourselves here.
-                text_array = process_command( command,param )
+                text_array = process_command( command, params )
                 populate_window( text_array )
                 read_input()
 	end
@@ -614,7 +651,10 @@ class Twitter
                 #this will be checks again when the output screen is drawn.
 		rows, columns = $stdin.winsize
                 if rows > 22 and columns > 66
+                        #this is where we draw our screen, draw our screen, draw our screen;
+                        #this is where we draw our screen - all day long.
                         draw_window
+                        #first data
                         populate_window( ["Press ':' to enter a command"] )
                         read_input()
                         
