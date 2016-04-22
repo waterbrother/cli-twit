@@ -526,10 +526,7 @@ class CLItwit
                 @screen.setpos(@i,1)
                 @screen.addstr( "NOTIFICATION BAR" )
                 @i += 1
-                #draw the bar again and make it change depending on whether the input continues beyond the bar
                 @screen.setpos(@i,1)
-                @screen.addstr( print_bar( bar_length, "-" ) )
-                @i += 1
                 #the bottom of the notification bar will be drawn as the top of the info panel
 
                 #####################
@@ -548,6 +545,13 @@ class CLItwit
                 @info_panel_size = @rows - header_size - notification_bar_size - command_bar_size - 1
                 #i don't know why this needs an extra row removed, but fuck it - it works
 
+                #draw the bar again and make it change depending on whether the input continues beyond the bar
+                if @text_begin > 0
+                        @screen.addstr( print_bar( bar_length, "+" ) )
+                else
+                        @screen.addstr( print_bar( bar_length, "-" ) )
+                end
+                @i += 1
                 #if the input has fewer rows than the info panel, and blank rows to fill the panel
                 if input.length < @info_panel_size
                         num_blank_rows = @info_panel_size - input.length
@@ -573,9 +577,12 @@ class CLItwit
                 # COMMAND PANEL #
                 #################
 
-                #draw the bar
-                @screen.setpos(@i,1)
-                @screen.addstr( print_bar( bar_length, "-" ) )
+                #draw the bar same as above, change if text continues beyond bar
+                if @text_end <= @info_panel_size + @text_begin
+                        @screen.addstr( print_bar( bar_length, "-" ) )
+                else
+                        @screen.addstr( print_bar( bar_length, "+" ) )
+                end
                 @i += 1
                 @screen.setpos(@i,1)
                 #this mind intentionally left blank
@@ -627,7 +634,8 @@ class CLItwit
                 
                 case command
                 when nil
-                        #do nothing. this allows us to bail on a command and stay on the same screen. 
+                        #do nothing.
+                        #this allows us to bail on a command and stay on the same screen. 
                 when /^home$/, /^h$/
                         tweets = params[0]
                         tweets = 20 if tweets == nil
