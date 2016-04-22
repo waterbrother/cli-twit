@@ -95,24 +95,33 @@ class CLItwit
                 #wait... no.
                 #FEED ME _A_ HASH!
                 bar = print_bar( @columns - 2, "-" )
-		pretty_output = []
-                feed_hash.each { |tweet| # include tweet_id for replies
+		pretty_output = Array.new
+                feed_hash.each { |tweet|
                         #make this a bit more readable
                         user = tweet[1][0]
-                        #remove trailing hyperlink
-                        text_array = tweet[1][1].split("http")
-                        text = text_array[0].sub("\n"," ")
+                        #remove  any possible hyperlink at the end of the tweet text
+                        #and taking the first element of the array
+                        #let's not do this yet. it seems like abad idea.
+                        #text_array = tweet[1][1].split("http")
+                        text = tweet[1][1]
                         #remove newlines
-                        text = text.sub("\n"," ")
+                        text.gsub!(/\n/," ")
                         #remove carriage returns
-                        text = text.sub("\r"," ")
+                        text.gsub!(/\r/," ")
+                        #fix any whitespace characters
+                        text.gsub!(/\s/," ")
                         #remove ampersands
-                        text = text.sub("&amp;","&")
+                        text.gsub!(/&amp;/,'&')
                         #remove "greater than"
-                        text = text.sub("&gt;",">")
+                        text.gsub!(/&gt;/,'>')
                         #remove "less than"
-                        text = text.sub("&lt;","<")
+                        text.gsub!(/&lt;/,'<')
+                        #fix single quotes
+                        text.gsub!(/@~[XY]/,"\'")
+                        #remove trailing '@'
+                        text.chomp!("@")
 
+                        #include tweet_id for replies
                         tweet_id = tweet[1][2]
                         link_hash = tweet[1][3]
                         screen_name = tweet[1][4]
@@ -121,26 +130,27 @@ class CLItwit
                         date = tweet[1][7]
 
                         #count the username and create the tabspace until the text
-                        pretty_output << "    #{user} @#{screen_name}"
-                        pretty_output << "    " + text
+                        pretty_output << "#{user} @#{screen_name}"
                         pretty_output << ""
-                        #dealing with PITA urls
+                        pretty_output << "#{text}"
+                        pretty_output << ""
+
+                        #dealing with pain-in-the-ass URLs
+                        #if the link hash exists, there are URLs
                         if link_hash != nil
-                                link = link_hash["expanded_url"]
-                                if link.length > 50
-                                        link = link_hash["url"]
-                                        pretty_output << "    link: #{link}"
+                                link_long = link_hash["expanded_url"]
+                                link_short = link_hash["url"]
+                                #if the expanded URL is more that 50 char, use the condensed one
+                                if link_long.length > 50
+                                        pretty_output << "link: #{link_short}"
                                 else
-                                        pretty_output << "    link: #{link}"
+                                        pretty_output << "link: #{link_long}"
                                 end
-                        elsif "#{text_array[1]}".length > 1
-                                pretty_output << "    link: http#{text_array[1]}"
                         end
-			pretty_output << "    ........................."
-                        pretty_output << "    tweet id: #{tweet_id}"
-                        pretty_output << "    retweets: #{num_retw}"
-                        pretty_output << "    favorites: #{num_favs}"
-                        pretty_output << "    date posted: #{date}"
+			pretty_output << "........................."
+                        pretty_output << "tweet id: #{tweet_id}"
+                        pretty_output << "retweets: #{num_retw}  favorites: #{num_favs}"
+                        pretty_output << "date posted: #{date}"
                         pretty_output << bar
                 }
 		return pretty_output
@@ -524,7 +534,10 @@ class CLItwit
                 @i += 1
                 #TODO: make status bar here for private messages and notifications
                 @screen.setpos(@i,1)
-                @screen.addstr( "NOTIFICATION BAR" )
+                notifications = 0
+                messages = 0
+                follows = 0
+                @screen.addstr( "[#{notifications}] Notifications  [#{messages}] Messages  [#{follows}] Follow Requests" )
                 @i += 1
                 @screen.setpos(@i,1)
                 #the bottom of the notification bar will be drawn as the top of the info panel
@@ -568,7 +581,7 @@ class CLItwit
                 @screen.setpos(@i,1)
                 input.each do |line|
                         @screen.setpos(@i,1)
-                        @screen.addstr(line)
+                        @screen.addstr( line )
                         @i += 1
                 end
                 @screen.setpos(@i,1)
