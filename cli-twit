@@ -8,13 +8,13 @@ require 'rake'
 require 'io/console'
 require 'curses'
 
-class Twitter
+class CLItwit
         def initialize(accessfile)
                 @accessfile = accessfile
         end
 
         def datafile_exists
-                return File.exists?(@accessfile)
+                return File.exists?( @accessfile )
         end
 
         def get_consumer
@@ -64,7 +64,7 @@ class Twitter
                 get_consumer()
                 authorize()
 
-                File.open("access", "w") { 
+                File.open( "access", "w" ) { 
                         |line| line.write(@access_token.token + ":" + @access_token.secret) 
                 }
         end
@@ -91,7 +91,10 @@ class Twitter
         end
 
         def feed_pretty( feed_hash )
-                bar = print_bar( @columns - 2 )
+                #FEED ME HASH!
+                #wait... no.
+                #FEED ME _A_ HASH!
+                bar = print_bar( @columns - 2, "-" )
 		pretty_output = []
                 feed_hash.each { |tweet| # include tweet_id for replies
                         #make this a bit more readable
@@ -143,7 +146,7 @@ class Twitter
 		return pretty_output
         end
 
-        def api_call(http_method, api_path, query_opts)
+        def api_call( http_method, api_path, query_opts )
                 #using a query here is a more uniform method than request.set_form_data for POST
                 if query_opts != nil
                         query = URI.encode_www_form(query_opts)
@@ -171,7 +174,7 @@ class Twitter
                 @response = @twitter.request(@request)
         end
 
-        def favorite(favorite_id)
+        def favorite( favorite_id )
                 output = []
 
                 if favorite_id != nil
@@ -190,7 +193,7 @@ class Twitter
                 return output
         end
 
-        def unfavorite(favorite_id)
+        def unfavorite( favorite_id )
                 output = []
 
                 if favorite_id != nil
@@ -239,7 +242,7 @@ class Twitter
                 end
         end
 
-        def post_tweet(text)
+        def post_tweet( text )
                 output = []
 
                 if text != nil and text.length > 140
@@ -260,7 +263,7 @@ class Twitter
                 return output
         end
 
-        def post_reply(username, tweet_id, text)
+        def post_reply( username, tweet_id, text )
                 output = []
 
                 all_good = true if username != nil and tweet_id != nil and text != nil and username =~ /@/
@@ -288,7 +291,7 @@ class Twitter
                 return output
         end
 
-        def retweet(tweet_id)
+        def retweet( tweet_id )
                 output = []
 
                 if tweet_id != nil
@@ -307,11 +310,11 @@ class Twitter
                 return output
         end
 
-        def delete_post(tweet_id)
+        def delete_post( tweet_id )
                 output = []
 
                 if tweet_id != nil
-                        api_call( :post, "/1.1/statuses/destroy.json", {"id" => tweet_id} )
+                        api_call( :post, "/1.1/statuses/destroy.json", { "id" => tweet_id } )
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
                                 output << "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}"
@@ -325,7 +328,7 @@ class Twitter
                 return output
         end
 
-        def follow_user(username)
+        def follow_user( username )
                 output = []
 
                 if username != nil
@@ -345,11 +348,11 @@ class Twitter
                 return output
         end
 
-        def unfollow_user(username)
+        def unfollow_user( username )
                 output = []
 
                 if username != nil
-                        api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username })
+                        api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username } )
                         if @response.code == '200' then
                                 confirm = JSON.parse(@response.body)
                                 user_unfollowed = confirm["screen_name"]
@@ -366,7 +369,7 @@ class Twitter
          end
 
          def get_user_feed( username, num_tweets )
-                api_call( :get, "/1.1/statuses/user_timeline.json", {"screen_name" => username, "count" => num_tweets })
+                api_call( :get, "/1.1/statuses/user_timeline.json", { "screen_name" => username, "count" => num_tweets } )
 
                 if @response.code == '200' then
                         feed =JSON.parse(@response.body)
@@ -407,30 +410,54 @@ class Twitter
                 return header
         end
 
-        def print_bar(num)
+        def print_bar( num, type )
                 bar = ""
-                num.times { bar << "-" }
+                num.times { bar << type }
                 return bar
         end
 
         def help
                 help = []
                 help << "Command syntax:"
-                help << "  <command> <parameter1>,<parameter2>,<etc...>"
+                help << "  <command> <parameter1> <parameter2> <etc...>"
+                help << "  Parameters marked |M| are mandatory;"
+                help << "  parameters marked |O| are optional."
                 help << ""
                 help << "Command List:"
                 help << "  'home' or 'h'\tView your home feed"
+                help << "\t\t\t<command> <|O|number>"
+                help << ""
                 help << "  'post' or 'p'\tWrite a post"
+                help << "\t\t\t<command> <|M|text>"
+                help << ""
                 help << "  'reply' or 'rp'\tReply to a tweet"
+                help << "\t\t\t<command> @<|M|username> <|M|tweet_id> <|M|text>"
+                help << ""
                 help << "  'retweet' or 'rt'\tRetweet a tweet"
+                help << "\t\t\t<command> <|M|tweet_id>"
+                help << ""
                 help << "  'user' or 'u'\tView another user's feed"
+                help << "\t\t\t<command> <|M|username> <|O|number>"
+                help << ""
                 help << "  'fav' or 'f'   \tMark a post as favorite"
+                help << "\t\t\t<command> <|M|tweet_id>"
+                help << ""
                 help << "  'unfav' or 'uf'\tUnmark a post as favorite"
-                help << "  'follow' or 'fo'\tFollow a user's tweets"
-                help << "  'unfolow' or 'ufo'\tUnfollow a user's tweets"
-                help << "  'delete' or 'd'\tDelete one of your posts (must be your own)"
+                help << "\t\t\t<command> <|M|tweet_id>"
+                help << ""
+                help << "  'follow' or 'fo'\tFollow a user"
+                help << "\t\t\t<command> @<|M|username>"
+                help << ""
+                help << "  'unfolow' or 'ufo'\tUnfollow a user"
+                help << "\t\t\t<command> @<|M|username>"
+                help << ""
+                help << "  'delete' or 'd'\tDelete a tweet (must be your own)"
+                help << "\t\t\t<command> <|M|tweet_id>"
+                help << ""
                 help << "  'help' or '?'\tView this help menu"
+                help << ""
                 help << "  'quit' or 'q'\tExit the program"
+                help << ""
                 return help
         end
 
@@ -482,7 +509,7 @@ class Twitter
                 head = header()
                 head.each do |line|
                         @screen.setpos(@i,1)
-                        @screen.addstr(line)
+                        @screen.addstr( line )
                         @i += 1
                 end
 
@@ -492,16 +519,18 @@ class Twitter
                 
                 #draw the bar
                 @screen.setpos(@i,1)
-                @screen.addstr( print_bar( @columns - 2 ) )
+                bar_length = @columns - 2
+                @screen.addstr( print_bar( bar_length, "-" ) )
                 @i += 1
                 #TODO: make status bar here for private messages and notifications
                 @screen.setpos(@i,1)
                 @screen.addstr( "NOTIFICATION BAR" )
                 @i += 1
-                #draw the bar again
+                #draw the bar again and make it change depending on whether the input continues beyond the bar
                 @screen.setpos(@i,1)
-                @screen.addstr( print_bar( @columns - 2 ) )
+                @screen.addstr( print_bar( bar_length, "-" ) )
                 @i += 1
+                #the bottom of the notification bar will be drawn as the top of the info panel
 
                 #####################
                 # INFORMATION PANEL #
@@ -516,7 +545,8 @@ class Twitter
                 header_size = head.length
                 notification_bar_size = 3
                 command_bar_size  = 3
-                @info_panel_size = @rows - header_size - notification_bar_size - command_bar_size - 1#i don't know why this needs an extra row removed, but fuck it - it works
+                @info_panel_size = @rows - header_size - notification_bar_size - command_bar_size - 1
+                #i don't know why this needs an extra row removed, but fuck it - it works
 
                 #if the input has fewer rows than the info panel, and blank rows to fill the panel
                 if input.length < @info_panel_size
@@ -545,7 +575,7 @@ class Twitter
 
                 #draw the bar
                 @screen.setpos(@i,1)
-                @screen.addstr( print_bar( @columns - 2 ) )
+                @screen.addstr( print_bar( bar_length, "-" ) )
                 @i += 1
                 @screen.setpos(@i,1)
                 #this mind intentionally left blank
@@ -553,7 +583,7 @@ class Twitter
                 @i += 1
                 #draw the bar again
                 @screen.setpos(@i,1)
-                @screen.addstr( print_bar( @columns - 2 ) )
+                @screen.addstr( print_bar( bar_length, "-" ) )
                 @i -= 1
                 @screen.setpos(@i,1)
         end
@@ -596,36 +626,38 @@ class Twitter
                 #nah, fuck it.
                 
                 case command
-                when /^home/, /^h$/
+                when nil
+                        #do nothing. this allows us to bail on a command and stay on the same screen. 
+                when /^home$/, /^h$/
                         tweets = params[0]
                         tweets = 20 if tweets == nil
                         @text_output = get_home_timeline( tweets )
-                when /^post/, /^p/
-                        text_output = post_tweet( params.join(" ") )
-                when /^reply/, /^rp/
-                        name = params[0].split(",")[0]
-                        id = params[0].split(",")[1]
-                        text = params[0].split(",")[2..-1].join(",")#a little extra magic to allow for commas in the text
+                when /^post$/, /^p$/
+                        @text_output = post_tweet( params.join(" ") )
+                when /^reply$/, /^rp$/
+                        name = params[0]
+                        id = params[1]
+                        text = params[2..-1].join(" ")
                         @text_output = post_reply( name, id, text )
-                when /^retweet/, /^rt/
-                        text_output = retweet( params[0] )
-                when /^user/, /^u/
+                when /^retweet$/, /^rt$/
+                        @text_output = retweet( params[0] )
+                when /^user$/, /^u$/
                         user, tweets = params
                         tweets = 20 if tweets == nil
                         @text_output = get_user_feed( user, tweets )
-                when /^fav/, /^f/
+                when /^fav$/, /^f$/
                         @text_output =  favorite( params[0] )
-                when /^unfav/, /^uf/
+                when /^unfav$/, /^uf$/
                         @text_output = unfavorite( params[0] )
-                when /^follow/, /^fo/
+                when /^follow$/, /^fo$/
                         @text_output = follow_user( params[0] )
-                when /unfollow/, /^ufo/
+                when /unfollow$/, /^ufo$/
                         @text_output = unfollow_user( params[0] )
-                when /^delete/, /^d/
+                when /^delete$/, /^d$/
                         @text_output = delete_post( params[0] )
                 when/^help$/, /^\?$/
                         @text_output = help()
-                when /^quit/, /^q/
+                when /^quit$/, /^q$/, /^exit$/
 			exit
                 else
                         @text_output = [ "Unrecognized command: \'#{command}\'" ]
@@ -640,12 +672,12 @@ class Twitter
 	def get_command
                 @screen.addstr(":")
                 Curses.echo
-                command = @screen.getstr
-                params = command.split(" ")[1..-1]
+                input = @screen.getstr
+                command = input.split(" ")[0]
+                params = input.split(" ")[1..-1]#this returns an array
                 Curses.noecho
                 
-                #set the beginning of our text.
-                #this will be reset everytime a new command is issued. 
+                #reset this every time a new command is issued. 
                 @text_begin = 0
                 
                 #this is where the snake eats its tail:
@@ -667,7 +699,10 @@ class Twitter
                         #this is where we draw our screen - all day long.
                         draw_window
                         #first data
-                        populate_window( ["Press ':' to enter a command"] )
+                        @text_output = [ "Press ':' to enter a command" ]
+                        @text_begin = 0
+                        @text_end = @text_output.length
+                        populate_window( @text_output )
                         read_input()
                         
 		else
@@ -682,7 +717,6 @@ class Twitter
         end
 end
 
-session = Twitter.new("access")
-
+session = CLItwit.new( "access" )
 session.begin
 
