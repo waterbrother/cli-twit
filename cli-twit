@@ -1,16 +1,62 @@
 #!/usr/bin/ruby
+################################################################################
+# TODO
+# 1. get notifications bar to work:
+#    notify about direct messages, favorites, follow requests
+#       -direct messages chould be checked once at the initial run-time
+#        and then every time the screen is loaded. the number of messages
+#        displayed in the bar should reflect the number of unread messages.
+#        
+# 2. create interface for:
+#       -direct messages
+#       -follow requests
+#       -notifications
+#
+# 3. navigation: 
+#       -include 'h' and 'l' commands to scroll left and right - well, maybe. 
+#        is this really usefull? YES - if we truncate text instead of wrapping
+#       -recognize key for exiting command bar:
+#               -BKSPC until all entered text is gone or 
+#               -use STDIN.getc or STDIN.read(num) because Curses fails to see ESC
+#
+#       -Allow returning to a screen without having to acquire new data or 
+#        losing one's place in the output being viewed.
+#       -once we can remember current data being shown, move command output to 
+#        the command bar. this will be cleared when ':' is pressed. 
+#        (maybe 'j' and 'k' too?)
+#
+################################################################################
 
 require 'rubygems'
 require 'oauth'
 require 'json'
 require 'net/http'
-require 'rake'
+#require 'rake' # I'm not sure we really need rake here. 
 require 'io/console'
 require 'curses'
+require 'optparse'
+
+options = {}
+optparse = OptionParser.new do |opts|
+
+        options[:header_size] = nil
+        opts.on('-H', '--header <SIZE>', '<large|small|tiny|noascii|3d|none>') do |param|
+                options[:header_size] = param
+        end
+
+        opts.banner = "Usage:"
+
+        opts.on("-h","--help", "Display help and exit") do 
+                puts opts
+                exit
+        end
+end
+optparse.parse!
 
 class CLItwit
-        def initialize(accessfile)
+        def initialize(accessfile, header_size)
                 @accessfile = accessfile
+                @header_size = header_size
         end
 
         def datafile_exists
@@ -64,8 +110,8 @@ class CLItwit
                 get_consumer()
                 authorize()
 
-                File.open( "access", "w" ) { 
-                        |line| line.write(@access_token.token + ":" + @access_token.secret) 
+                File.open( "access", "w" ) { |line| 
+                        line.write(@access_token.token + ":" + @access_token.secret) 
                 }
         end
 
@@ -406,16 +452,55 @@ class CLItwit
                end
         end
 
-        def header
-                header = []
-                header << "       ________   ____      ___      __________ "
-                header << "      /       /  /   /     /   /    /         /           __"
-                header << "     /   ____/  /   /     /   /    /___   ___/           /_/   __"
-                header << "    /   /      /   /     /   / ____   /  /   __     __  _   __/ /_"
-                header << "   /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/"
-                header << "  /   /____  /   /___  /   /        /  /   / / // / / / /   / /"
-                header << " /        / /       / /   /        /  /   / /_//_/ / / /   / /"
-                header << "/________/ /_______/ /___/        /__/   /________/ /_/   /_/"
+        def header(type)
+                header_large = []
+                header_large << "       ________   ____      ___      __________ "
+                header_large << "      /       /  /   /     /   /    /         /           __"
+                header_large << "     /   ____/  /   /     /   /    /___   ___/           /_/   __"
+                header_large << "    /   /      /   /     /   / ____   /  /   __     __  _   __/ /_"
+                header_large << "   /   /      /   /     /   / /___/  /  /   / / _  / / / / /_  __/"
+                header_large << "  /   /____  /   /___  /   /        /  /   / / // / / / /   / /"
+                header_large << " /        / /       / /   /        /  /   / /_//_/ / / /   / /"
+                header_large << "/________/ /_______/ /___/        /__/   /________/ /_/   /_/"
+
+                header_small = []
+                header_small << " ____   _     _          _                  _"
+                header_small << "|  __| | |   | |  __   _| |_  _  _  _  _  _| |_"
+                header_small << "| |__  | |__ | | |__| |_   _|| || || || ||_   _|"
+                header_small << "|____| |____||_|        |_|  |_______||_|  |_|"
+
+
+                header_tiny = []
+                header_tiny << " ___ .    .     ___          "
+                header_tiny << "|    |    |  -   |  . . . * _|_"
+                header_tiny << "|___ |__  |      |  |_|_| |  |"
+
+                header_noascii = [ "CLI-Twit" ]
+
+                header_3d = []
+                header_3d << '     ___        ___    ___             ___                                 '
+                header_3d << '    /\  \      /\__\  /\  \           /\  \      ___          ___     ___  '
+                header_3d << '   /  \  \    / /  /  \ \  \          \ \  \    /\__\        /\__\ _ /\__\ '
+                header_3d << '  / /\ \  \  / /  /__  \ \  \   ___    \ \  \  / / _/_      _\/__//\/ /  / '
+                header_3d << ' / /  \ \  \/ /  /\  \ /  \  \ /\  \   /  \  \/ / /\__\    /\__\  \  /__/  '
+                header_3d << '/ /__/ \ \__\/__/\ \  / /\ \  \\\ \  \ / /\ \  \/_/ / __\  / /  /  /  \__\  '
+                header_3d << '\ \  \  \/__/\  \ \ \/ / /\ \__\\\ \__\ /  \ \__\/ / /\__\/ /  /  / /\/__/  '
+                header_3d << ' \ \  \     \ \  \ \  /_/  \/__/ \/__//  / \/__/ / / /  / /  /  / /  /     '
+                header_3d << '  \ \  \     \ \  \ \ \  \         / /  /      \ \/ /  / /  /  / /  /      '
+                header_3d << '   \ \__\     \ \__\ \ \__\       / /  /        \  /  /\/__/   \/__/       '
+                header_3d << '    \/__/      \/__/  \/__/       \/__/          \/__/                     '
+
+                header_none = []
+
+                header = case type
+                         when "large" then header_large
+                         when "small" then header_small
+                         when "tiny" then header_tiny
+                         when "noascii" then header_noascii
+                         when "3d" then header_3d
+                         when "none" then header_none
+                         else header_3d
+                         end
 
                 return header
         end
@@ -428,10 +513,19 @@ class CLItwit
 
         def help
                 help = []
+                help << "Navigation:"
+                help << "  Use the 'j' and 'k' keys to scroll down and up respectively."
+                help << ""
+                help << "  When there is additional text available beyond the scope"
+                help << "  of the terminal, the bar along the edge of the output"
+                help << "  will change from a row of dashes to a row of plusses."
+                help << ""
+                help << ""
                 help << "Command syntax:"
                 help << "  <command> <parameter1> <parameter2> <etc...>"
                 help << "  Parameters marked |M| are mandatory;"
                 help << "  parameters marked |O| are optional."
+                help << ""
                 help << ""
                 help << "Command List:"
                 help << "  'home' or 'h'\tView your home feed"
@@ -516,7 +610,7 @@ class CLItwit
                 ##########
                 
                 #draw the cli-twit header
-                head = header()
+                head = header(@header_size)
                 head.each do |line|
                         @screen.setpos(@i,1)
                         @screen.addstr( line )
@@ -648,7 +742,8 @@ class CLItwit
                 case command
                 when nil
                         #do nothing.
-                        #this allows us to bail on a command and stay on the same screen. 
+                        #this used to allow us to bail on a command and stay on the same screen. 
+                        #that's now done in get_command, but this is still here just to be safe
                 when /^home$/, /^h$/
                         tweets = params[0]
                         tweets = 20 if tweets == nil
@@ -681,7 +776,7 @@ class CLItwit
                 when /^quit$/, /^q$/, /^exit$/
 			exit
                 else
-                        @text_output = [ "Unrecognized command: \'#{command}\'" ]
+                        @text_output = [ "Unrecognized command: \'#{command}\'", "For a list of commands, use '?' or 'help'" ]
                 end
 
                 #burger's done
@@ -692,18 +787,73 @@ class CLItwit
         
 	def get_command
                 @screen.addstr(":")
-                Curses.echo
-                input = @screen.getstr
+                #########################################
+                # THE OLD WAY
+                #Curses.echo
+                #input = @screen.getstr
+                #command = input.split(" ")[0]
+                #params = input.split(" ")[1..-1]#this returns an array
+                #Curses.noecho
+                #########################################
+                
+                #########################################
+                # THE NEW WAY
+                input = ""
+                col_i = 2
+                loop do
+                        c = @screen.getch
+                        case c 
+                        when 127
+                                # I can has backspace? 
+                                if col_i > 2
+                                        #move the cursor back
+                                        @screen.setpos( @i, col_i - 1 )
+                                        #clobber currect char with a space
+                                        @screen.addstr(" ")
+                                        #remove the last char from the input string
+                                        input.chop!
+                                        #change cursor reference location
+                                        col_i -= 1
+                                        #move the cursor to the reference location
+                                        @screen.setpos( @i, col_i )
+                                elsif col_i <=2
+                                        #move the cursor back
+                                        @screen.setpos( @i, col_i - 1 )
+                                        #clobber currect char with a space
+                                        @screen.addstr(" ")
+                                        col_i -= 1
+                                        #move the cursor to the reference location
+                                        @screen.setpos( @i, col_i )
+                                        break                                        
+                                end
+                        when /[0-9]/, /[a-z]/, /[A-Z]/, ' ', /[?]/
+                                #using this to sanitize input, only acceptable chars should be here
+                                @screen.addstr("#{c}")
+                                input << c
+                                col_i += 1
+                                @screen.setpos( @i, col_i )
+                        when 10
+                                break
+                        else
+                                # the trash bin. just put a single place-holder char that can be removed easily
+                                # and won't cause any trouble when it's read
+                                @screen.addstr("#")
+                                input << "#"
+                                col_i += 1
+                                @screen.setpos( @i, col_i )
+
+                        end
+                end
                 command = input.split(" ")[0]
                 params = input.split(" ")[1..-1]#this returns an array
-                Curses.noecho
+                #########################################
                 
                 #reset this every time a new command is issued. 
                 @text_begin = 0
                 
                 #this is where the snake eats its tail:
                 #we loop back on ourselves here.
-                process_command( command, params )
+                process_command( command, params ) if command != nil
 	end
 
         def begin
@@ -738,6 +888,6 @@ class CLItwit
         end
 end
 
-session = CLItwit.new( "access" )
+session = CLItwit.new( "access", options[:header_size] )
 session.begin
 
