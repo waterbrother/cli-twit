@@ -13,29 +13,44 @@
 #       -notifications
 #
 # 3. navigation: 
-#       -include 'h' and 'l' commands to scroll left and right - well, maybe. 
-#        is this really usefull? YES - if we truncate text instead of wrapping
-#       -recognize key for exiting command bar:
-#               -BKSPC until all entered text is gone or 
-#               -use STDIN.getc or STDIN.read(num) because Curses fails to see ESC
+#       -include 'h' and 'l' commands to scroll left and right, and truncate 
+#        text that is too long for the output screen instead of wrapping it.
+#       -BUGFIX: (minor) bailing out of a command resets the position of the 
+#        currently displayed info to the top. This will probably affect the new 
+#        command drawing too - maybe create a new class variable that will 
+#        remember the current position?
+#       -move output of executed commands to the command bar. this will be 
+#        cleared when the next key event is read. 
+#               -change process_command to differentiate between output drawn
+#                to the info panel and commmand output drawn to the command bar
+#               -change populate_window to take 2nd parameter (command) and write 
+#                the command output to the command bar 
+#                               OR
+#               -create new method to solely clear the text in the command bar 
+#                and write new output there.
 #
-#       -Allow returning to a screen without having to acquire new data or 
-#        losing one's place in the output being viewed.
-#       -once we can remember current data being shown, move command output to 
-#        the command bar. this will be cleared when ':' is pressed. 
-#        (maybe 'j' and 'k' too?)
+#
+################################################################################
+#
+# DONE:
+# Add version display to list of invocation arugments
+# Add more usage and navigation info in CLI help output.
+# Recognize key for exiting command bar:
+#               -BKSPC until all entered text is gone 
+#               -use ESC to bail on command mode
 #
 ################################################################################
 
-require 'rubygems'
+#REQUIREMENTS
 require 'oauth'
 require 'json'
 require 'net/http'
-#require 'rake' # I'm not sure we really need rake here. 
 require 'io/console'
 require 'curses'
 require 'optparse'
 
+#CONSTANTS
+VERSION = "CLI-twit v3.7 2016-08-19"
 options = {}
 optparse = OptionParser.new do |opts|
 
@@ -44,10 +59,20 @@ optparse = OptionParser.new do |opts|
                 options[:header_size] = param
         end
 
-        opts.banner = "Usage:"
+        opts.banner = "Navigation:\n" +
+                "CLI-Twit navigation uses Vim-like commands.\n" + 
+                "    ':'\t\t\t\t     enter command mode\n" + 
+                "    'h', 'j', 'k', 'l'\t\t     scroll left, down, up, right \n" + 
+                "    please use ':?' to get a list of all commands.\n" + 
+                "Invocation:"
 
         opts.on("-h","--help", "Display help and exit") do 
                 puts opts
+                exit
+        end
+
+        opts.on("-v", "--version", "Display version and exit." ) do 
+                puts VERSION
                 exit
         end
 end
@@ -69,7 +94,7 @@ class CLItwit
                 @consumer_key = data_hash[0].chomp
                 #puts "ck: " + @consumer_key
                 @consumer_secret = data_hash[1].chomp
-                #puts "ck: " + @consumer_secret
+                #puts "cs: " + @consumer_secret
         end
 
 
@@ -581,7 +606,9 @@ class CLItwit
                 #this is the first, last, and only place this will be decided.
                 #if the user resizes the terminal after this,
                 #it will fuck everything up.
-		@rows, @columns = $stdin.winsize
+                #2016-08-19: NOT TRUE! the window size is determined in the 'begin'
+                #method. I set those to be a class variables instead of re-doing it here. 
+		#@rows, @columns = $stdin.winsize
                 
                 #draw our window and set echo off
                 #all other methods will clear and redraw this window
@@ -744,6 +771,7 @@ class CLItwit
                         #do nothing.
                         #this used to allow us to bail on a command and stay on the same screen. 
                         #that's now done in get_command, but this is still here just to be safe
+                        #and allow for an empty command
                 when /^home$/, /^h$/
                         tweets = params[0]
                         tweets = 20 if tweets == nil
@@ -786,6 +814,7 @@ class CLItwit
         end
         
 	def get_command
+                #allow reading of all characters -particularly the ESC key
                 @screen.addstr(":")
                 #########################################
                 # THE OLD WAY
@@ -833,6 +862,23 @@ class CLItwit
                                 col_i += 1
                                 @screen.setpos( @i, col_i )
                         when 10
+                                #enter/carriage return - just process the command text
+                                #and break from the loop
+                                break
+                        when 27
+                                #ESCAPE IF YOU CAN!
+                                #clobber the entire line with empty spaces
+                                @screen.setpos( @i, 1 )
+                                empty_line = ""
+                                (@columns - 3 ).times do
+                                        empty_line << " "
+                                end
+                                @screen.addstr("#{empty_line}")
+                                #set the cursor back to the correct position
+                                @screen.setpos( @i, 1 )
+                                #empty the command text
+                                input = ""
+                                #break from the loop
                                 break
                         else
                                 # the trash bin. just put a single place-holder char that can be removed easily
@@ -864,8 +910,8 @@ class CLItwit
 
                 #check screen size here first before we launch.
                 #this will be checks again when the output screen is drawn.
-		rows, columns = $stdin.winsize
-                if rows > 22 and columns > 66
+		@rows, @columns = $stdin.winsize
+                if @rows > 22 and @columns > 66
                         #this is where we draw our screen, draw our screen, draw our screen;
                         #this is where we draw our screen - all day long.
                         draw_window
