@@ -6,6 +6,14 @@
 #       -direct messages chould be checked once at the initial run-time
 #        and then every time the screen is loaded. the number of messages
 #        displayed in the bar should reflect the number of unread messages.
+#
+#        It may be desireable to write a file that will remember the state
+#        of certain things like the most recent message id in the inbox and 
+#        number of notifications, etc. This seems unclean to me, but I can't 
+#        really imagine any other way to do it. Maybe then it's not worth
+#        doing? I have qualms about tracking the user, but the Twitter API
+#        doesn't appear to give me a way to find unread messages or new 
+#        notifications.
 #        
 # 2. create interface for:
 #       -direct messages
@@ -15,29 +23,35 @@
 # 3. navigation: 
 #       -include 'h' and 'l' commands to scroll left and right, and truncate 
 #        text that is too long for the output screen instead of wrapping it.
-#       -BUGFIX: (minor) bailing out of a command resets the position of the 
-#        currently displayed info to the top. This will probably affect the new 
-#        command drawing too - maybe create a new class variable that will 
-#        remember the current position?
-#       -move output of executed commands to the command bar. this will be 
-#        cleared when the next key event is read. 
-#               -change process_command to differentiate between output drawn
-#                to the info panel and commmand output drawn to the command bar
-#               -change populate_window to take 2nd parameter (command) and write 
-#                the command output to the command bar 
-#                               OR
-#               -create new method to solely clear the text in the command bar 
-#                and write new output there.
+#
+#       -create funtion to enforce horizontal character limit and use it on 
+#        the main window output as well as the console_comment. this should
+#        truncate the output and append a '...' to indicate the truncation
+#        occurred 
+#
 #
 #
 ################################################################################
 #
 # DONE:
-# Add version display to list of invocation arugments
-# Add more usage and navigation info in CLI help output.
-# Recognize key for exiting command bar:
+# -Add version display to list of invocation arugments
+#
+# -Add more usage and navigation info in CLI help output.
+#
+# -Recognize key for exiting command bar:
 #               -BKSPC until all entered text is gone 
 #               -use ESC to bail on command mode
+#
+# -Create new method for clearing the command bar
+#
+# -Change process_command flow to switch between redrawing the window with new 
+#  output or clearing the command bar and writing console comment to command bar
+#
+# -move output of executed commands to the command bar; output is cleared when
+#  the next key event is read. 
+#
+# -BUGFIX: (minor) bailing out of a command resets the position of the 
+#  currently displayed info to the top. 
 #
 ################################################################################
 
@@ -50,7 +64,7 @@ require 'curses'
 require 'optparse'
 
 #CONSTANTS
-VERSION = "CLI-twit v3.7 2016-08-19"
+VERSION = "CLI-twit v3.8 2016-08-22"
 options = {}
 optparse = OptionParser.new do |opts|
 
@@ -256,41 +270,33 @@ class CLItwit
         end
 
         def favorite( favorite_id )
-                output = []
-
                 if favorite_id != nil
                         api_call( :post, "/1.1/favorites/create.json", {"id" => favorite_id} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output << "Tweet has been favorited: #{tweet["text"]}"
+                                @console_comment = "Tweet has been favorited: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to be favorited: #{@response.body}"
+                                @console_comment = "Tweet failed to be favorited: #{@response.body}"
                         end
                 else
-                        output << "Please pass tweet id as an argument to this function."
+                        @console_comment = "Please pass tweet id as an argument to this function."
                 end
-
-                return output
         end
 
         def unfavorite( favorite_id )
-                output = []
-
                 if favorite_id != nil
                         api_call( :post, "/1.1/favorites/destroy.json", {"id" => favorite_id} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output << "Tweet has been unfavorited: #{tweet["text"]}"
+                                @console_comment = "Tweet has been unfavorited: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to be unfavorited: #{@response.body}"
+                                @console_comment = "Tweet failed to be unfavorited: #{@response.body}"
                         end
                 else
-                        output << "Please pass tweet id as an argument to this function."
+                        @console_comment = "Please pass tweet id as an argument to this function."
                 end
-
-                return output
         end
 
  
@@ -319,134 +325,111 @@ class CLItwit
                         #make our output prettier
                         return feed_pretty( output )
                 else
-                        return ["Could not get the feed! Code:#{@response.code} Body:#{@response.body}"]
+                        @console_comment = "Could not get the feed! Code:#{@response.code} Body:#{@response.body}"
                 end
         end
 
         def post_tweet( text )
-                output = []
-
                 if text != nil and text.length > 140
-                        output << "Tweet text is more than 140 characters. Post aborted."
+                        @console_comment = "Tweet text is more than 140 characters. Post aborted."
                 elsif text != nil and text.length <= 140
                         api_call( :post, "/1.1/statuses/update.json", {"status" => text} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output << "Tweet has been posted: #{tweet["text"]}"
+                                @console_comment = "Tweet has been posted: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to post: #{@response.body}"
+                                @console_comment = "Tweet failed to post: #{@response.body}"
                         end
                 else
-                        output << "No tweet text given. Post aborted."
+                        @console_comment = "No tweet text given. Post aborted."
                 end
-
-                return output
         end
 
         def post_reply( username, tweet_id, text )
-                output = []
 
-                all_good = true if username != nil and tweet_id != nil and text != nil and username =~ /@/
+                all_good = true if username != nil and tweet_id != nil and text != nil
 
                 if all_good == true
                         tweet_length = username.length + text.length
                         
                         if tweet_length > 140
-                                output << "Tweet length more than 140 characters. Reply aborted."
+                                @console_coment = "Tweet length more than 140 characters. Reply aborted."
                         else
                                 final_text = "#{username} #{text}"
                                 api_call( :post, "/1.1/statuses/update.json", {"status" => final_text, "in_reply_to_status_id" => tweet_id} )
                                 
                                 if @response.code == '200'
                                         tweet = JSON.parse(@response.body)
-                                        output <<  "Tweet has been posted: #{tweet["text"]}"
+                                        @console_coment = "Tweet has been posted: #{tweet["text"]}"
                                 else
-                                        output << "Tweet failed to post: #{@response.body}"
+                                        @console_coment = "Tweet failed to post: #{@response.body}"
                                 end
                         end
                 else
-                        output << "Please check your parameters. See help function for more info."
+                        @console_coment = "Please check your command syntax. See help function for more info."
                 end
-
-                return output
         end
 
         def retweet( tweet_id )
-                output = []
-
                 if tweet_id != nil
                         api_call( :post, "/1.1/statuses/retweet/#{tweet_id}.json", {} )
 
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output << "Tweet has been posted: #{tweet["text"]}"
+                                @console_comment = "Tweet has been posted: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to post: #{@response.body}"
+                                @console_comment = "Tweet failed to post: #{@response.body}"
                         end
                 else
-                        output << "Tweet id empty. Retweeting aborted."
+                        @console_comment = "Tweet id empty. Retweeting aborted."
                 end
-
-                return output
         end
 
         def delete_post( tweet_id )
-                output = []
-
                 if tweet_id != nil
                         api_call( :post, "/1.1/statuses/destroy.json", { "id" => tweet_id } )
                         if @response.code == '200'
                                 tweet = JSON.parse(@response.body)
-                                output << "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}"
+                                @console_comment = "Tweet ##{tweet["id_str"]} has been deleted: #{tweet["text"]}"
                         else
-                                output << "Tweet failed to delete: #{@response.body}"
+                                @console_comment = "Tweet failed to delete: #{@response.body}"
                         end
                 else
-                        output << "No tweet ID given; deletion aborted."
+                        @console_comment = "No tweet ID given; deletion aborted."
                 end
-
-                return output
         end
 
         def follow_user( username )
-                output = []
-
                 if username != nil
                         api_call( :post, "/1.1/friendships/create.json", { "screen_name" => username, "follow" => true } )
                         if @response.code == '200'
                                 confirm = JSON.parse(@response.body)
                                 user_followed = confirm["screen_name"]
                                 real_name = confirm["name"]
-                                output << "Now following user #{user_followed}: #{real_name}"
+                                @console_comment = "Now following user #{user_followed}: #{real_name}"
                         else
-                                output << "Failed to follow user: #{@response.body}"
+                                @console_comment = "Failed to follow user: #{@response.body}"
                         end
                 else
-                        output << "Follow failed; username cannot be empty."
+                        @console_comment = "Follow failed; username cannot be empty."
                 end
-
-                return output
         end
 
         def unfollow_user( username )
-                output = []
-
                 if username != nil
                         api_call( :post, "/1.1/friendships/destroy.json", { "screen_name" => username } )
                         if @response.code == '200' then
                                 confirm = JSON.parse(@response.body)
                                 user_unfollowed = confirm["screen_name"]
                                 real_name = confirm["name"]
-                                output <<  "Unfollowed user #{user_unfollowed}: #{real_name}"
+                                @console_comment = "Unfollowed user #{user_unfollowed}: #{real_name}"
                         else
-                                output << "Failed to follow user: #{@response.body}"
+                                @console_comment = "Failed to follow user: #{@response.body}"
                         end
                 else
-                        output << "Unfollow failed; username cannot be empty."
+                        @console_comment = "Unfollow failed; username cannot be empty."
                 end
-
-                return output
          end
 
          def get_user_feed( username, num_tweets )
@@ -468,12 +451,9 @@ class CLItwit
                                 output[count] = [ user, text, tweet_id, links, screen_name, num_favs, num_retw, date]
                                 count += 1
                         }
-
-                        #make our output prettier
                         return feed_pretty( output )
                else
-                        return "Could not get the feed!" +
-                        "Code:#{@response.code} Body:#{@response.body}"
+                        @console_comment = "Code:#{@response.code} Body:#{@response.body}"
                end
         end
 
@@ -726,7 +706,40 @@ class CLItwit
                 @screen.setpos(@i,1)
                 @screen.addstr( print_bar( bar_length, "-" ) )
                 @i -= 1
-                @screen.setpos(@i,1)
+                #specifically remember the number of the line where the cursor should be on the command bar
+                @commandbar_row = @i
+                #set the cursor position on the command bar
+                @screen.setpos(@commandbar_row,1)
+        end
+
+        def scroll_up
+                #decrement the top line of text if we're not at the first line already
+                @text_begin -= 1 if @text_begin > 0
+                populate_window( @text_output[@text_begin..-1] )
+                read_input()
+        end
+
+        def scroll_down()
+                #increment the top line of text if the first line is not the last
+                @text_begin += 1 if @text_begin <= @text_end - @info_panel_size
+                populate_window( @text_output[@text_begin..-1] )
+                read_input()
+        end
+
+        def clear_commandbar
+                #clobber the entire line with empty spaces
+                @screen.setpos( @commandbar_row, 1 )
+                empty_line = ""
+                (@columns - 2 ).times do
+                        empty_line << " "
+                end
+                @screen.addstr("#{empty_line}")
+                #set the cursor back to the correct position
+                @screen.setpos( @commandbar_row, 1 )
+        end
+        
+        def truncate( string )
+
         end
 
         def read_input
@@ -736,6 +749,7 @@ class CLItwit
                         case input
 
                         when ':'
+                                clear_commandbar()
                                 get_command()
                         when 'k'
                                 scroll_up()
@@ -745,27 +759,95 @@ class CLItwit
                 end
         end
 
-        def scroll_up
-                @text_begin -= 1 if @text_begin > 0
-                populate_window( @text_output[@text_begin..-1] )
-                read_input()
-        end
+	def get_command
+                #allow reading of all characters -particularly the ESC key
+                @screen.addstr(":")
+                #########################################
+                # THE OLD WAY
+                #Curses.echo
+                #input = @screen.getstr
+                #command = input.split(" ")[0]
+                #params = input.split(" ")[1..-1]#this returns an array
+                #Curses.noecho
+                #########################################
+                
+                #########################################
+                # THE NEW WAY
+                input = ""
+                #hard-code the command bar position on the X axis to initally be set at 2
+                col_i = 2
+                loop do
+                        c = @screen.getch
+                        case c 
+                        when 127
+                                # I can has backspace? 
+                                if col_i > 2
+                                        #move the cursor back
+                                        @screen.setpos( @i, col_i - 1 )
+                                        #clobber currect char with a space
+                                        @screen.addstr(" ")
+                                        #remove the last char from the input string
+                                        input.chop!
+                                        #change cursor reference location
+                                        col_i -= 1
+                                        #move the cursor to the reference location
+                                        @screen.setpos( @i, col_i )
+                                elsif col_i <=2
+                                        #move the cursor back
+                                        @screen.setpos( @i, col_i - 1 )
+                                        #clobber currect char with a space
+                                        @screen.addstr(" ")
+                                        col_i -= 1
+                                        #move the cursor to the reference location
+                                        @screen.setpos( @i, col_i )
+                                        break                                        
+                                end
+                        when /[0-9]/, /[a-z]/, /[A-Z]/, ' ', '?', '@'
+                                #using this to sanitize input, only acceptable chars should be here
+                                @screen.addstr("#{c}")
+                                input << c
+                                col_i += 1
+                                @screen.setpos( @i, col_i )
+                        when 10
+                                #enter/carriage return - just process the command text
+                                #and break from the loop
+                                break
+                        when 27
+                                #ESCAPE IF YOU CAN!
+                                clear_commandbar()
+                                #empty the command text
+                                input = ""
+                                #break from the loop
+                                break
+                        else
+                                #the trash bin. just put a single place-holder char that can be removed easily
+                                #and won't cause any trouble when it's read
+                                @screen.addstr("#")
+                                input << "#"
+                                col_i += 1
+                                @screen.setpos( @i, col_i )
 
-        def scroll_down()
-                @text_begin += 1 if @text_begin <= @text_end - @info_panel_size
-                populate_window( @text_output[@text_begin..-1] )
-                read_input()
-        end
+                        end
+                end
+                command = input.split(" ")[0]
+                params = input.split(" ")[1..-1]#this returns an array
+                #########################################
+                
+                #reset this every time a new command is issued unless the input is empty. 
+                @text_begin = 0 if input != ""
+                
+                #this is where the snake eats its tail:
+                #we loop back on ourselves here.
+                process_command( command, params ) if command != nil
+	end
 
         def process_command( command, params )
                 #output command expects an array
                 #declare it here so we can get it later
                 text_output = Array.new
 
-                #maybe we should sanitize our parameter first before blindly passing it to the following functions
-                #:: code goes here
-                #nah, fuck it.
-                
+                #empty any previous console comment
+                @console_comment = ""
                 case command
                 when nil
                         #do nothing.
@@ -804,109 +886,25 @@ class CLItwit
                 when /^quit$/, /^q$/, /^exit$/
 			exit
                 else
-                        @text_output = [ "Unrecognized command: \'#{command}\'", "For a list of commands, use '?' or 'help'" ]
+                        @console_comment = "Not a command: \'#{command}\'.  For a list of commands, use '?' or 'help'"
                 end
 
                 #burger's done
                 @text_end = @text_output.length
-                populate_window( @text_output )
+                if @console_comment.length == 0
+                        populate_window( @text_output )
+                else
+                        clear_commandbar()
+                        @screen.addstr( @console_comment )
+                end
+
                 read_input()
         end
-        
-	def get_command
-                #allow reading of all characters -particularly the ESC key
-                @screen.addstr(":")
-                #########################################
-                # THE OLD WAY
-                #Curses.echo
-                #input = @screen.getstr
-                #command = input.split(" ")[0]
-                #params = input.split(" ")[1..-1]#this returns an array
-                #Curses.noecho
-                #########################################
-                
-                #########################################
-                # THE NEW WAY
-                input = ""
-                col_i = 2
-                loop do
-                        c = @screen.getch
-                        case c 
-                        when 127
-                                # I can has backspace? 
-                                if col_i > 2
-                                        #move the cursor back
-                                        @screen.setpos( @i, col_i - 1 )
-                                        #clobber currect char with a space
-                                        @screen.addstr(" ")
-                                        #remove the last char from the input string
-                                        input.chop!
-                                        #change cursor reference location
-                                        col_i -= 1
-                                        #move the cursor to the reference location
-                                        @screen.setpos( @i, col_i )
-                                elsif col_i <=2
-                                        #move the cursor back
-                                        @screen.setpos( @i, col_i - 1 )
-                                        #clobber currect char with a space
-                                        @screen.addstr(" ")
-                                        col_i -= 1
-                                        #move the cursor to the reference location
-                                        @screen.setpos( @i, col_i )
-                                        break                                        
-                                end
-                        when /[0-9]/, /[a-z]/, /[A-Z]/, ' ', /[?]/
-                                #using this to sanitize input, only acceptable chars should be here
-                                @screen.addstr("#{c}")
-                                input << c
-                                col_i += 1
-                                @screen.setpos( @i, col_i )
-                        when 10
-                                #enter/carriage return - just process the command text
-                                #and break from the loop
-                                break
-                        when 27
-                                #ESCAPE IF YOU CAN!
-                                #clobber the entire line with empty spaces
-                                @screen.setpos( @i, 1 )
-                                empty_line = ""
-                                (@columns - 3 ).times do
-                                        empty_line << " "
-                                end
-                                @screen.addstr("#{empty_line}")
-                                #set the cursor back to the correct position
-                                @screen.setpos( @i, 1 )
-                                #empty the command text
-                                input = ""
-                                #break from the loop
-                                break
-                        else
-                                # the trash bin. just put a single place-holder char that can be removed easily
-                                # and won't cause any trouble when it's read
-                                @screen.addstr("#")
-                                input << "#"
-                                col_i += 1
-                                @screen.setpos( @i, col_i )
-
-                        end
-                end
-                command = input.split(" ")[0]
-                params = input.split(" ")[1..-1]#this returns an array
-                #########################################
-                
-                #reset this every time a new command is issued. 
-                @text_begin = 0
-                
-                #this is where the snake eats its tail:
-                #we loop back on ourselves here.
-                process_command( command, params ) if command != nil
-	end
 
         def begin
-                if datafile_exists() == false
-                        create_new_datafile() # both consumer info and access token are gathered in this step
-                end
-
+                #create a new datafile if one doesn't exist yet
+                #both consumer info and access token are gathered in this step
+                create_new_datafile() if datafile_exists() == false
 
                 #check screen size here first before we launch.
                 #this will be checks again when the output screen is drawn.
