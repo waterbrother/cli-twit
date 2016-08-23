@@ -23,35 +23,29 @@
 # 3. navigation: 
 #       -include 'h' and 'l' commands to scroll left and right, and truncate 
 #        text that is too long for the output screen instead of wrapping it.
+#        still not sold on this idea entirely. 
 #
-#       -create funtion to enforce horizontal character limit and use it on 
-#        the main window output as well as the console_comment. this should
-#        truncate the output and append a '...' to indicate the truncation
-#        occurred 
+#       -handle long text of tweets in the feed better than just wrapping 
+#        it to the line below. 
+#
+#
+# 4. command bar:
+#       -on command bar in smaller screen, entered text wraps below bar if 
+#        text exceeds available space. text should scroll so that the most
+#        recently entered character is on the rightmost of the screen, 
+#        previously entered characters will be hidden on the left.
 #
 #
 #
 ################################################################################
 #
 # DONE:
-# -Add version display to list of invocation arugments
+# -created funtion to enforce horizontal character limit and use it on 
+#  the console_comment. this should truncate the output and append a '...' to 
+#  indicate the truncation occurred 
 #
-# -Add more usage and navigation info in CLI help output.
-#
-# -Recognize key for exiting command bar:
-#               -BKSPC until all entered text is gone 
-#               -use ESC to bail on command mode
-#
-# -Create new method for clearing the command bar
-#
-# -Change process_command flow to switch between redrawing the window with new 
-#  output or clearing the command bar and writing console comment to command bar
-#
-# -move output of executed commands to the command bar; output is cleared when
-#  the next key event is read. 
-#
-# -BUGFIX: (minor) bailing out of a command resets the position of the 
-#  currently displayed info to the top. 
+# -fixed major bug causing crashes due to methods writing strings to 
+#  @text_output, which expects arrays
 #
 ################################################################################
 
@@ -64,7 +58,7 @@ require 'curses'
 require 'optparse'
 
 #CONSTANTS
-VERSION = "CLI-twit v3.8 2016-08-22"
+VERSION = "CLI-twit v3.10 2016-08-23"
 options = {}
 optparse = OptionParser.new do |opts|
 
@@ -738,8 +732,18 @@ class CLItwit
                 @screen.setpos( @commandbar_row, 1 )
         end
         
-        def truncate( string )
-
+        def maxlen( string )
+                max_length = @columns - 2
+                length_diff = string.length - max_length
+                if length_diff > 0
+                        (length_diff + 3).times do
+                                string.chop!
+                        end
+                        string << "..."
+                        return string
+                else
+                        return string
+                end
         end
 
         def read_input
@@ -859,28 +863,28 @@ class CLItwit
                         tweets = 20 if tweets == nil
                         @text_output = get_home_timeline( tweets )
                 when /^post$/, /^p$/
-                        @text_output = post_tweet( params.join(" ") )
+                        post_tweet( params.join(" ") )
                 when /^reply$/, /^rp$/
                         name = params[0]
                         id = params[1]
                         text = params[2..-1].join(" ")
-                        @text_output = post_reply( name, id, text )
+                        post_reply( name, id, text )
                 when /^retweet$/, /^rt$/
-                        @text_output = retweet( params[0] )
+                        retweet( params[0] )
                 when /^user$/, /^u$/
                         user, tweets = params
                         tweets = 20 if tweets == nil
                         @text_output = get_user_feed( user, tweets )
                 when /^fav$/, /^f$/
-                        @text_output =  favorite( params[0] )
+                        favorite( params[0] )
                 when /^unfav$/, /^uf$/
-                        @text_output = unfavorite( params[0] )
+                        unfavorite( params[0] )
                 when /^follow$/, /^fo$/
-                        @text_output = follow_user( params[0] )
+                        follow_user( params[0] )
                 when /unfollow$/, /^ufo$/
-                        @text_output = unfollow_user( params[0] )
+                        unfollow_user( params[0] )
                 when /^delete$/, /^d$/
-                        @text_output = delete_post( params[0] )
+                        delete_post( params[0] )
                 when/^help$/, /^\?$/
                         @text_output = help()
                 when /^quit$/, /^q$/, /^exit$/
@@ -895,7 +899,8 @@ class CLItwit
                         populate_window( @text_output )
                 else
                         clear_commandbar()
-                        @screen.addstr( @console_comment )
+                        @screen.addstr( maxlen(@console_comment) )
+                        #@screen.addstr( @console_comment )
                 end
 
                 read_input()
