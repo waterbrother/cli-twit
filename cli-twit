@@ -25,27 +25,19 @@
 #        text that is too long for the output screen instead of wrapping it.
 #        still not sold on this idea entirely. 
 #
-#       -handle long text of tweets in the feed better than just wrapping 
-#        it to the line below. 
-#
-#
 # 4. command bar:
 #       -on command bar in smaller screen, entered text wraps below bar if 
 #        text exceeds available space. text should scroll so that the most
 #        recently entered character is on the rightmost of the screen, 
 #        previously entered characters will be hidden on the left.
 #
-#
-#
 ################################################################################
 #
 # DONE:
-# -created funtion to enforce horizontal character limit and use it on 
-#  the console_comment. this should truncate the output and append a '...' to 
-#  indicate the truncation occurred 
+#       -handle long text of tweets in the feed better than just wrapping 
+#        it to the line below. 
 #
-# -fixed major bug causing crashes due to methods writing strings to 
-#  @text_output, which expects arrays
+#       -add option to make feeds more compact by removing empty lines
 #
 ################################################################################
 
@@ -58,13 +50,18 @@ require 'curses'
 require 'optparse'
 
 #CONSTANTS
-VERSION = "CLI-twit v3.10 2016-08-23"
+VERSION = "CLI-twit v3.12 2016-08-30"
 options = {}
 optparse = OptionParser.new do |opts|
 
         options[:header_size] = nil
         opts.on('-H', '--header <SIZE>', '<large|small|tiny|noascii|3d|none>') do |param|
                 options[:header_size] = param
+        end
+
+        options[:compact] = false
+        opts.on('-C', '--compact', 'Remove empty lines from feed output') do
+                options[:compact] = true
         end
 
         opts.banner = "Navigation:\n" +
@@ -87,9 +84,10 @@ end
 optparse.parse!
 
 class CLItwit
-        def initialize(accessfile, header_size)
+        def initialize(accessfile, header_size, compact)
                 @accessfile = accessfile
                 @header_size = header_size
+                @feed_compact = compact
         end
 
         def datafile_exists
@@ -210,9 +208,62 @@ class CLItwit
 
                         #count the username and create the tabspace until the text
                         pretty_output << "#{user} @#{screen_name}"
-                        pretty_output << ""
-                        pretty_output << "#{text}"
-                        pretty_output << ""
+
+                        #get rid of any links in the text.
+                        #the only links that should show are the ones in the json output
+                        #split the line by spaces
+                        words = text.split(" ")
+                        text_nolinks = ""
+                        words.each do |word|
+                                if word !~ /https:\/\/t.co/
+                                        text_nolinks << "#{word} "
+                                end
+                        end
+
+                        text = text_nolinks.chop #remove trailing space
+
+                        pretty_output << "" if @feed_compact == false
+
+                        #make the output of the text wrap more cleanly
+                        text_maxlen = @columns - 2
+                        if text.length > text_maxlen
+                                #split the line by spaces
+                                words = text.split(" ")
+                                #find the amount of lines we need to split the text into
+                                lines_count = (text.length.to_f / text_maxlen.to_f).ceil
+                                #integers don't return floats when divided,
+                                #so no need to floor the result. this is 
+                                #really very general because we're not taking 
+                                #into account the length of each word in the text
+                                words_per_line = (words.length / lines_count ) 
+                                #build the lines
+                                line_array= []
+                                line = ""
+                                words.length.times do |num|
+                                        word = words[num]
+                                        #use modulo to do this
+                                        if ((num + 1) % words_per_line) != 0 and (num + 1) != words.length #this is a regular line
+                                                #add the word to the line
+                                                line << "#{word} "
+                                        elsif ((num + 1) % words_per_line) == 0 and (num + 1) != words.length #this is a new line
+                                                #add the word to the line
+                                                line << "#{word} "
+                                                #add the line to the array
+                                                line_array << line
+                                                #clear the line for the next iteration
+                                                line = ""
+                                        elsif (num + 1) == words.length #this is the last word of the array
+                                                #add the word to the line
+                                                line << "#{word} "
+                                                line_array << line 
+                                        end
+                                end
+                                line_array.each { |line| pretty_output << line }
+                        else
+                                pretty_output << "#{text}"
+                        end
+                        
+                        pretty_output << "" if @feed_compact == false
 
                         #dealing with pain-in-the-ass URLs
                         #if the link hash exists, there are URLs
@@ -937,6 +988,6 @@ class CLItwit
         end
 end
 
-session = CLItwit.new( "access", options[:header_size] )
+session = CLItwit.new( "access", options[:header_size], options[:compact] )
 session.begin
 
