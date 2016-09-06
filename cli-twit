@@ -31,13 +31,18 @@
 #        recently entered character is on the rightmost of the screen, 
 #        previously entered characters will be hidden on the left.
 #
+#        how to implement? each time a char is entered in get_command, a function 
+#        will be called to read a buffer that contains the entire typed line
+#        but only returns chars in the buffer that fit in the space available, 
+#        causing longer text to be right justified. this needs to consider
+#        backspacing and escaping the command mode. basically, each time a 
+#        char is entered, we need to check what row the cursor is currently in.
+#        if the position is in bounds, add the char, otherwise reprint the
+#        whole command, right-justified, from the buffer. 
+#
 ################################################################################
 #
 # DONE:
-#       -handle long text of tweets in the feed better than just wrapping 
-#        it to the line below. 
-#
-#       -add option to make feeds more compact by removing empty lines
 #
 ################################################################################
 
@@ -755,6 +760,9 @@ class CLItwit
                 @commandbar_row = @i
                 #set the cursor position on the command bar
                 @screen.setpos(@commandbar_row,1)
+                #set the max length of any string on the command bar
+                @commandbar_lastcol = @columns - 2 #why 2?
+                @cmd_maxchars = @commandbar_lastcol - 2
         end
 
         def scroll_up
@@ -775,7 +783,7 @@ class CLItwit
                 #clobber the entire line with empty spaces
                 @screen.setpos( @commandbar_row, 1 )
                 empty_line = ""
-                (@columns - 2 ).times do
+                @commandbar_lastcol.times do
                         empty_line << " "
                 end
                 @screen.addstr("#{empty_line}")
@@ -784,17 +792,25 @@ class CLItwit
         end
         
         def maxlen( string )
-                max_length = @columns - 2
-                length_diff = string.length - max_length
+                length_diff = string.length - @commandbar_lastcol + 1
+                #if the string is longer than the max allowed
                 if length_diff > 0
+                        #chop the extra characters off the end, plus 3 more for the '...'
                         (length_diff + 3).times do
                                 string.chop!
                         end
+                        #add the '...'
                         string << "..."
                         return string
+                #otherwise just return the string
                 else
                         return string
                 end
+        end
+
+        def commandbar_hscroll( string, maxlength )
+                firstchar = string.length - maxlength
+                return string[firstchar..-1]
         end
 
         def read_input
@@ -814,6 +830,18 @@ class CLItwit
                 end
         end
 
+        def #debug_cursor( input )
+                @screen.setpos( @i - 4 , 0 )
+                @columns.times { @screen.addstr(" ") }
+                @screen.setpos( @i - 3 , 0 )
+                @columns.times { @screen.addstr(" ") }
+                @screen.setpos( @i - 4 , 0 )
+                @screen.addstr("col_i:#{@col_i},last_col:#{@commandbar_lastcol}")
+                @screen.setpos( @i - 3 , 0 )
+                @screen.addstr("input:#{input},length:#{input.length}")
+                @screen.setpos( @i, @col_i )
+        end
+
 	def get_command
                 #allow reading of all characters -particularly the ESC key
                 @screen.addstr(":")
@@ -828,44 +856,81 @@ class CLItwit
                 
                 #########################################
                 # THE NEW WAY
+                #remember what the complete command is in a buffer, despite what is displayed
                 input = ""
                 #hard-code the command bar position on the X axis to initally be set at 2
-                col_i = 2
+                #and remember that is the beginning
+                @col_i = 2
+                cb_begin_col = 2
                 loop do
                         c = @screen.getch
                         case c 
                         when 127
-                                # I can has backspace? 
-                                if col_i > 2
-                                        #move the cursor back
-                                        @screen.setpos( @i, col_i - 1 )
-                                        #clobber currect char with a space
-                                        @screen.addstr(" ")
-                                        #remove the last char from the input string
+                                #I can has backspace? 
+                                if input.length <= @cmd_maxchars
+                                        if @col_i > 2
+                                                #if the cursor is not at the begining of the command bar
+                                                #remove the last char from the input string
+                                                input.chop!
+                                                #move the cursor back
+                                                @screen.setpos( @i, @col_i - 1 )
+                                                #clobber currect char with a space
+                                                @screen.addstr(" ")
+                                                #change cursor reference location
+                                                @col_i -= 1
+                                                #move the cursor to the reference location
+                                                @screen.setpos( @i, @col_i )
+                                                #debug_cursor(input)
+                                        else
+                                                #move the cursor back
+                                                @screen.setpos( @i, @col_i - 1 )
+                                                #clobber currect char with a space
+                                                @screen.addstr(" ")
+                                                @col_i -= 1
+                                                #move the cursor to the reference location
+                                                @screen.setpos( @i, @col_i )
+                                                #debug_cursor(input)
+                                                break                                        
+                                        end
+                                else
+                                        #we're gonna need a horizontal scroll
                                         input.chop!
-                                        #change cursor reference location
-                                        col_i -= 1
-                                        #move the cursor to the reference location
-                                        @screen.setpos( @i, col_i )
-                                elsif col_i <=2
-                                        #move the cursor back
-                                        @screen.setpos( @i, col_i - 1 )
-                                        #clobber currect char with a space
-                                        @screen.addstr(" ")
-                                        col_i -= 1
-                                        #move the cursor to the reference location
-                                        @screen.setpos( @i, col_i )
-                                        break                                        
+                                        @screen.setpos( @i, cb_begin_col )
+                                        @col_i = cb_begin_col
+                                        command_out = commandbar_hscroll( input, @cmd_maxchars )
+                                        command_out.each_char do |c|
+                                                @screen.addstr("#{c}")
+                                                @col_i += 1
+                                                @screen.setpos( @i, @col_i )
+                                        end
+                                        #debug_cursor(input)
                                 end
                         when /[0-9]/, /[a-z]/, /[A-Z]/, ' ', '?', '@'
                                 #using this to sanitize input, only acceptable chars should be here
-                                @screen.addstr("#{c}")
                                 input << c
-                                col_i += 1
-                                @screen.setpos( @i, col_i )
+                                if input.length <= @cmd_maxchars
+                                        #there is enough space for the new char
+                                        @screen.addstr("#{c}")
+                                        @col_i += 1
+                                        @screen.setpos( @i, @col_i )
+                                        #debug_cursor(input)
+                                else
+                                        #scrolling: go to the beginning of the 
+                                        #command bar line and then redraw the entire 
+                                        #line with only the output that fits
+                                        @screen.setpos( @i, cb_begin_col )
+                                        @col_i = cb_begin_col
+                                        command_out = commandbar_hscroll( input, @cmd_maxchars )
+                                        command_out.each_char do |c|
+                                                @screen.addstr("#{c}")
+                                                @col_i += 1
+                                                @screen.setpos( @i, @col_i )
+                                        end
+                                        #debug_cursor(input)
+                                end
                         when 10
-                                #enter/carriage return - just process the command text
-                                #and break from the loop
+                                #enter/carriage return - just break from the loop
+                                #and process the command text
                                 break
                         when 27
                                 #ESCAPE IF YOU CAN!
@@ -877,11 +942,23 @@ class CLItwit
                         else
                                 #the trash bin. just put a single place-holder char that can be removed easily
                                 #and won't cause any trouble when it's read
-                                @screen.addstr("#")
                                 input << "#"
-                                col_i += 1
-                                @screen.setpos( @i, col_i )
-
+                                if input.length <= @cmd_maxchars
+                                        @screen.addstr("#")
+                                        @col_i += 1
+                                        @screen.setpos( @i, @col_i )
+                                        #debug_cursor(input)
+                                else
+                                        @screen.setpos( @i, cb_begin_col )
+                                        @col_i = cb_begin_col
+                                        command_out = commandbar_hscroll( input, @cmd_maxchars )
+                                        command_out.each_char do |c|
+                                                @screen.addstr("#{c}")
+                                                @col_i += 1
+                                                @screen.setpos( @i, @col_i )
+                                        end
+                                        #debug_cursor(input)
+                                end
                         end
                 end
                 command = input.split(" ")[0]
